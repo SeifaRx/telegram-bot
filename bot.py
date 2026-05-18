@@ -36,7 +36,7 @@ logging.basicConfig(
 TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# COLOQUE SEU ID DO TELEGRAM
+# SEU ID TELEGRAM
 ADMIN_ID = 5651378630
 
 # =========================================
@@ -161,21 +161,6 @@ EMOJIS:
 - Não exagere
 - Use para melhorar visualmente
 
-EXEMPLOS DE FORMATAÇÃO:
-
-✅ Correto:
-
-📌 Opções:
-
-1. Primeira opção
-
-2. Segunda opção
-
-3. Terceira opção
-
-❌ Errado:
-texto gigante sem espaço e sem organização
-
 PERSONALIDADE:
 
 - Seja amigável
@@ -295,17 +280,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 🤖 IA ONLINE 🚀
 
-📌 COMANDOS:
-
-/comandos
-/limites
-/stats
-/perfil
-/limpar
-/modo
-/ping
-
-💬 Converse normalmente com a IA.
+💬 Pode conversar comigo normalmente.
 """
 
     await update.message.reply_text(texto)
@@ -321,8 +296,6 @@ async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     texto = """
 📌 COMANDOS DISPONÍVEIS
-
-/start → iniciar bot
 
 /comandos → ver comandos
 
@@ -677,7 +650,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             estilo = "Seja motivadora, estratégica e inspiradora."
 
         elif modo_usuario == "engraçado":
-            estilo = "Seja divertida, descontraída e levemente engraçada."
+            estilo = "Seja divertida e descontraída."
 
         elif modo_usuario == "frio":
             estilo = "Seja objetiva, curta e direta."
