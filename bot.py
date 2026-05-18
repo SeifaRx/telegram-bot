@@ -22,14 +22,14 @@ TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # =========================================
-# VERIFICA VARIÁVEIS
+# VERIFICAÇÕES
 # =========================================
 
 if not TOKEN:
-    raise Exception("TOKEN do Telegram não encontrado.")
+    raise Exception("❌ TOKEN do Telegram não encontrado.")
 
 if not GROQ_API_KEY:
-    raise Exception("GROQ_API_KEY não encontrada.")
+    raise Exception("❌ GROQ_API_KEY não encontrada.")
 
 # =========================================
 # CLIENTE GROQ
@@ -60,22 +60,21 @@ REGRAS:
 
 - Responda sempre em português brasileiro
 - Nunca fale como robô
-- Seja natural
-- Seja humana
-- Seja inteligente
-- Converse como uma pessoa real
+- Seja natural e humana
+- Converse como uma pessoa inteligente
+- Seja amigável
+- Seja moderna
+- Demonstre raciocínio real
 - Não faça textões desnecessários
 - Explique bem quando necessário
 - Seja objetiva quando precisar
-- Use linguagem moderna
-- Demonstre personalidade
-- Seja amigável
+- Nunca pareça suporte automático
 - Nunca use frases artificiais
-- Não pareça suporte automático
+- Não repita informações
 - Use quebra de linha para melhorar leitura
 - Seja conversacional
+- Demonstre personalidade
 - Faça perguntas quando fizer sentido
-- Nunca repita informações
 - Não invente informações falsas
 
 ESTILO:
@@ -86,7 +85,7 @@ ESTILO:
 """
 
 # =========================================
-# START
+# /START
 # =========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,7 +118,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.message.from_user.id
 
         # =========================================
-        # EFEITO DIGITANDO
+        # DIGITANDO...
         # =========================================
 
         await context.bot.send_chat_action(
@@ -128,29 +127,21 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # =========================================
-        # CRIA MEMÓRIA
+        # MEMÓRIA
         # =========================================
 
         if user_id not in memoria:
             memoria[user_id] = []
-
-        # =========================================
-        # SALVA USUÁRIO
-        # =========================================
 
         memoria[user_id].append({
             "role": "user",
             "content": mensagem
         })
 
-        # =========================================
-        # LIMITA MEMÓRIA
-        # =========================================
-
         memoria[user_id] = memoria[user_id][-MAX_MSG:]
 
         # =========================================
-        # ESTILO DINÂMICO
+        # PERSONALIDADE DINÂMICA
         # =========================================
 
         mensagem_lower = mensagem.lower()
@@ -182,7 +173,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             """
 
         # =========================================
-        # MONTA MENSAGENS
+        # MENSAGENS
         # =========================================
 
         messages = [
@@ -195,11 +186,11 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages.extend(memoria[user_id])
 
         # =========================================
-        # CHAMA IA
+        # IA
         # =========================================
 
         resposta = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.8,
             top_p=0.95,
@@ -209,7 +200,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto = resposta.choices[0].message.content.strip()
 
         # =========================================
-        # EVITA TEXTÃO
+        # LIMITA TAMANHO
         # =========================================
 
         if len(texto) > 1500:
@@ -253,7 +244,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-# comando /start
+# /start
 app.add_handler(
     CommandHandler("start", start)
 )
