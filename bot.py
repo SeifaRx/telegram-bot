@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
@@ -36,7 +36,7 @@ logging.basicConfig(
 TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# SEU ID TELEGRAM
+# COLOQUE SEU ID DO TELEGRAM
 ADMIN_ID = 5651378630
 
 # =========================================
@@ -55,13 +55,12 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# MODELO MAIS ECONÔMICO
 model = genai.GenerativeModel(
     "gemini-2.5-flash-lite"
 )
 
 # =========================================
-# DATABASE SQLITE
+# SQLITE
 # =========================================
 
 conn = sqlite3.connect(
@@ -89,7 +88,7 @@ conn.commit()
 
 memoria = {}
 
-MAX_MSG = 4
+MAX_MSG = 6
 
 # =========================================
 # CONTROLE
@@ -118,26 +117,87 @@ TEMPO_MINIMO = 1.5
 # =========================================
 
 SYSTEM_PROMPT = """
-Você é uma inteligência artificial extremamente inteligente e humana.
+Você é uma inteligência artificial extremamente inteligente, natural e organizada.
 
-REGRAS:
-- Responda em português brasileiro
+REGRAS IMPORTANTES:
+
+- Responda sempre em português brasileiro
+- Fale como uma pessoa real
 - Nunca fale como robô
-- Seja natural
+- Seja parecida com ChatGPT
+- Seja inteligente e útil
+- Entenda o contexto da conversa
+
+ESTILO DAS RESPOSTAS:
+
+- Se a pergunta for simples:
+responda curto e direto
+
+- Se a pergunta precisar:
+explique mais detalhadamente
+
+- Nunca faça textões desnecessários
+- Nunca enrole
+- Seja objetiva quando possível
+- Seja detalhada quando necessário
+
+ORGANIZAÇÃO:
+
+- Organize respostas visualmente
+- Use espaços entre tópicos
+- Use listas quando fizer sentido
+- Use:
+1.
+2.
+3.
+
+- Separe informações importantes
+- Deixe fácil de ler
+- Não mande tudo em um bloco gigante
+
+EMOJIS:
+
+- Pode usar emojis quando combinar
+- Não exagere
+- Use para melhorar visualmente
+
+EXEMPLOS DE FORMATAÇÃO:
+
+✅ Correto:
+
+📌 Opções:
+
+1. Primeira opção
+
+2. Segunda opção
+
+3. Terceira opção
+
+❌ Errado:
+texto gigante sem espaço e sem organização
+
+PERSONALIDADE:
+
 - Seja amigável
 - Seja moderna
-- Seja parecida com ChatGPT
-- Não faça textões
-- Explique bem quando necessário
-- Use quebra de linha
-- Varie respostas
-- Não repita frases
 - Demonstre personalidade
-- Converse como humano
+- Varie as respostas
+- Não repita frases
+- Converse naturalmente
+
+IMPORTANTE:
+
+- Se o usuário pedir algo rápido:
+responda rápido
+
+- Se pedir explicação:
+explique muito bem
+
+- Adapte o tamanho da resposta automaticamente
 """
 
 # =========================================
-# VERIFICA ADMIN
+# ADMIN
 # =========================================
 
 def eh_admin(user_id):
@@ -197,6 +257,33 @@ def pegar_modo(user_id):
     return "normal"
 
 # =========================================
+# COMANDOS TELEGRAM
+# =========================================
+
+async def configurar_comandos(app):
+
+    comandos = [
+
+        BotCommand("start", "Iniciar bot"),
+
+        BotCommand("comandos", "Ver comandos"),
+
+        BotCommand("limites", "Ver limites da IA"),
+
+        BotCommand("stats", "Ver estatísticas"),
+
+        BotCommand("perfil", "Seu perfil"),
+
+        BotCommand("limpar", "Limpar memória"),
+
+        BotCommand("modo", "Alterar modo"),
+
+        BotCommand("ping", "Status do bot"),
+    ]
+
+    await app.bot.set_my_commands(comandos)
+
+# =========================================
 # START
 # =========================================
 
@@ -208,7 +295,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 🤖 IA ONLINE 🚀
 
-COMANDOS:
+📌 COMANDOS:
 
 /comandos
 /limites
@@ -218,7 +305,7 @@ COMANDOS:
 /modo
 /ping
 
-Converse normalmente com a IA.
+💬 Converse normalmente com a IA.
 """
 
     await update.message.reply_text(texto)
@@ -235,7 +322,7 @@ async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 📌 COMANDOS DISPONÍVEIS
 
-/start → iniciar
+/start → iniciar bot
 
 /comandos → ver comandos
 
@@ -248,11 +335,14 @@ async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /limpar → limpar memória
 
 /modo normal
+
 /modo coach
+
 /modo engraçado
+
 /modo frio
 
-/ping → status bot
+/ping → status do bot
 """
 
     await update.message.reply_text(texto)
@@ -282,13 +372,13 @@ async def limites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = f"""
 📊 USO DA IA
 
-Mensagens hoje:
+💬 Mensagens hoje:
 {TOTAL_MSG}
 
-⚠️ Alerta 1:
+⚠️ Primeiro alerta:
 {ALERTA_1}
 
-🚨 Alerta 2:
+🚨 Segundo alerta:
 {ALERTA_2}
 """
 
@@ -346,16 +436,16 @@ async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = f"""
 👤 PERFIL
 
-Nome:
+📛 Nome:
 {usuario[0]}
 
-Mensagens:
+💬 Mensagens:
 {usuario[1]}
 
-Modo:
+🎭 Modo:
 {usuario[2]}
 
-Criado em:
+📅 Criado em:
 {usuario[3]}
 """
 
@@ -375,7 +465,7 @@ async def limpar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     memoria[user_id] = []
 
     await update.message.reply_text(
-        "🧠 Memória limpa."
+        "🧠 Memória limpa com sucesso."
     )
 
 # =========================================
@@ -394,7 +484,17 @@ async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
 
         await update.message.reply_text(
-            "Use:\n/modo normal\n/modo coach\n/modo engraçado\n/modo frio"
+            """
+🎭 MODOS DISPONÍVEIS
+
+/modo normal
+
+/modo coach
+
+/modo engraçado
+
+/modo frio
+"""
         )
 
         return
@@ -432,7 +532,7 @@ async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================================
-# RESPOSTA IA
+# IA
 # =========================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -459,7 +559,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nome = user.first_name
 
         # =========================================
-        # BLOQUEIA PRIVADO
+        # PRIVADO
         # =========================================
 
         chat_type = update.message.chat.type
@@ -512,7 +612,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TOTAL_MSG += 1
 
         # =========================================
-        # ALERTAS ADMIN
+        # ALERTAS
         # =========================================
 
         if TOTAL_MSG >= ALERTA_1 and not alerta_1_enviado:
@@ -521,7 +621,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text="⚠️ Limite da IA chegando perto."
+                text="⚠️ O limite da IA está chegando perto."
             )
 
         if TOTAL_MSG >= ALERTA_2 and not alerta_2_enviado:
@@ -530,7 +630,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text="🚨 Limite da IA quase acabando."
+                text="🚨 O limite da IA está quase acabando."
             )
 
         # =========================================
@@ -574,16 +674,16 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         estilo = ""
 
         if modo_usuario == "coach":
-            estilo = "Seja motivadora e estratégica."
+            estilo = "Seja motivadora, estratégica e inspiradora."
 
         elif modo_usuario == "engraçado":
-            estilo = "Seja divertida e descontraída."
+            estilo = "Seja divertida, descontraída e levemente engraçada."
 
         elif modo_usuario == "frio":
-            estilo = "Seja objetiva e direta."
+            estilo = "Seja objetiva, curta e direta."
 
         else:
-            estilo = "Seja natural."
+            estilo = "Seja natural e inteligente."
 
         # =========================================
         # PROMPT
@@ -602,20 +702,20 @@ IA:
 """
 
         # =========================================
-        # IA
+        # GEMINI
         # =========================================
 
         resposta = model.generate_content(
             prompt,
             generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 100,
+                "temperature": 0.8,
+                "max_output_tokens": 250,
             }
         )
 
         texto = resposta.text.strip()
 
-        texto = texto[:1000]
+        texto = texto[:3000]
 
         memoria[user_id].append(
             f"IA: {texto}"
@@ -647,27 +747,42 @@ IA:
         )
 
 # =========================================
-# APP
+# MAIN
 # =========================================
 
-app = ApplicationBuilder().token(TOKEN).build()
+async def main():
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("comandos", comandos))
-app.add_handler(CommandHandler("limites", limites))
-app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CommandHandler("perfil", perfil))
-app.add_handler(CommandHandler("limpar", limpar))
-app.add_handler(CommandHandler("modo", modo))
-app.add_handler(CommandHandler("ping", ping))
+    app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        responder
+    await configurar_comandos(app)
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("comandos", comandos))
+    app.add_handler(CommandHandler("limites", limites))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("perfil", perfil))
+    app.add_handler(CommandHandler("limpar", limpar))
+    app.add_handler(CommandHandler("modo", modo))
+    app.add_handler(CommandHandler("ping", ping))
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            responder
+        )
     )
-)
 
-print("🚀 BOT ONLINE")
+    print("🚀 BOT ONLINE")
 
-app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    while True:
+        await asyncio.sleep(3600)
+
+# =========================================
+# START
+# =========================================
+
+asyncio.run(main())
