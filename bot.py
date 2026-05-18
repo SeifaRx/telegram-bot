@@ -9,65 +9,123 @@ from telegram.ext import (
 from groq import Groq
 import os
 
+# =========================
+# CONFIG
+# =========================
+
 TOKEN = os.getenv("TOKEN")
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 client = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
+    api_key=GROQ_API_KEY
 )
+
+# =========================
+# MEMÓRIA
+# =========================
 
 memoria = {}
 
+MAX_MSG = 10
+
+# =========================
+# RESPOSTA
+# =========================
+
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_id = update.message.from_user.id
-    mensagem = update.message.text
+    try:
 
-    if user_id not in memoria:
-        memoria[user_id] = []
+        if not update.message:
+            return
 
-    memoria[user_id].append(f"Usuário: {mensagem}")
+        mensagem = update.message.text
 
-    historico = "\n".join(memoria[user_id][-6:])
+        if not mensagem:
+            return
 
-    prompt = f"""
-Você é uma IA extremamente inteligente.
+        user_id = update.message.from_user.id
+
+        # cria memória
+        if user_id not in memoria:
+            memoria[user_id] = []
+
+        memoria[user_id].append(f"Usuário: {mensagem}")
+
+        # limita memória
+        memoria[user_id] = memoria[user_id][-MAX_MSG:]
+
+        historico = "\n".join(memoria[user_id])
+
+        # prompt inteligente
+        prompt = f"""
+Você é uma inteligência artificial extremamente inteligente, rápida e natural.
 
 REGRAS:
 - Responda sempre em português brasileiro
-- Seja humana
-- Seja natural
-- Seja inteligente
+- Seja humana e amigável
+- Nunca responda em inglês
+- Dê respostas completas
+- Nunca corte respostas no meio
+- Explique muito bem
+- Seja inteligente e detalhada
+- Continue escrevendo até finalizar completamente
+- Responda como ChatGPT premium
+- Seja natural em conversas
 
 CONVERSA:
 {historico}
+
+RESPOSTA:
 """
 
-    resposta = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.7,
-        max_tokens=200
+        resposta = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.7,
+            max_tokens=1200
+        )
+
+        texto = resposta.choices[0].message.content
+
+        # salva resposta
+        memoria[user_id].append(f"Bot: {texto}")
+
+        # envia resposta
+        await update.message.reply_text(texto)
+
+    except Exception as e:
+
+        print("ERRO:", e)
+
+        await update.message.reply_text(
+            "❌ Erro temporário na IA."
+        )
+
+# =========================
+# START
+# =========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+        "🤖 IA ONLINE E FUNCIONANDO 🚀"
     )
 
-    texto = resposta.choices[0].message.content
-
-    memoria[user_id].append(f"Bot: {texto}")
-
-    await update.message.reply_text(texto)
+# =========================
+# APP
+# =========================
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT,
-        responder
-    )
-)
+# comando /start
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder))
 
 print("🚀 BOT ONLINE")
 
