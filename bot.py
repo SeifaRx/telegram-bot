@@ -1,8 +1,4 @@
-from telegram import (
-    Update,
-    BotCommand
-)
-
+from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
@@ -44,7 +40,7 @@ TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # SEU ID TELEGRAM
-ADMIN_ID = 5651378630
+ADMIN_ID = 123456789
 
 # ID DO GRUPO
 GRUPO_ID = -1001234567890
@@ -54,12 +50,6 @@ TIMEZONE = ZoneInfo("America/Sao_Paulo")
 # =========================================
 # GEMINI
 # =========================================
-
-if not TOKEN:
-    raise Exception("TOKEN não encontrada")
-
-if not GEMINI_API_KEY:
-    raise Exception("GEMINI_API_KEY não encontrada")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -77,15 +67,6 @@ conn = sqlite3.connect(
 )
 
 cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS usuarios (
-    user_id INTEGER PRIMARY KEY,
-    nome TEXT,
-    mensagens INTEGER DEFAULT 0,
-    criado_em TEXT
-)
-""")
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS funcionarios (
@@ -108,6 +89,7 @@ conn.commit()
 # =========================================
 
 memoria = {}
+
 MAX_MSG = 6
 
 # =========================================
@@ -115,29 +97,27 @@ MAX_MSG = 6
 # =========================================
 
 usuarios_aguardando = {}
+
 ultimo_tempo = {}
+
 TEMPO_MINIMO = 1.5
 
 # =========================================
-# SYSTEM PROMPT
+# PROMPT
 # =========================================
 
 SYSTEM_PROMPT = """
-Você é uma inteligência artificial extremamente inteligente, organizada e natural.
+Você é uma inteligência artificial extremamente inteligente e organizada.
 
 REGRAS:
 
 - Responda em português brasileiro
-- Nunca fale como robô
 - Seja parecida com ChatGPT
 - Responda curto quando possível
 - Explique melhor quando necessário
-- Organize respostas
 - Use emojis quando combinar
-- Use listas organizadas
-- Não faça textões desnecessários
-- Nunca corte respostas no meio
-- Sempre finalize o raciocínio
+- Organize respostas
+- Nunca faça textões desnecessários
 """
 
 # =========================================
@@ -180,36 +160,6 @@ def pegar_config(chave, padrao=None):
     return padrao
 
 # =========================================
-# USUÁRIOS
-# =========================================
-
-def criar_usuario(user_id, nome):
-
-    cursor.execute(
-        "SELECT * FROM usuarios WHERE user_id=?",
-        (user_id,)
-    )
-
-    usuario = cursor.fetchone()
-
-    if not usuario:
-
-        cursor.execute(
-            """
-            INSERT INTO usuarios
-            (user_id, nome, criado_em)
-            VALUES (?, ?, ?)
-            """,
-            (
-                user_id,
-                nome,
-                str(datetime.now())
-            )
-        )
-
-        conn.commit()
-
-# =========================================
 # COMANDOS TELEGRAM
 # =========================================
 
@@ -243,23 +193,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 🤖 BOT ONLINE 🚀
 
-💬 Sistema funcionando.
-
-Use /comandos
-"""
-
-    await update.message.reply_text(texto)
-
-# =========================================
-# COMANDOS
-# =========================================
-
-async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not eh_admin(update.message.from_user.id):
-        return
-
-    texto = """
 📌 COMANDOS
 
 /addfuncionario ID Nome
@@ -268,9 +201,11 @@ async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 /listar
 
-/horario 08:00
+/horario manha 08:00
 
-/mensagem texto
+/horario tarde 15:00
+
+/mensagem sua mensagem
 
 /ligar
 
@@ -301,6 +236,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = int(args[0])
+
     nome = " ".join(args[1:])
 
     cursor.execute(
@@ -319,7 +255,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================================
-# REMOVER
+# REMOVER FUNCIONÁRIO
 # =========================================
 
 async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -392,23 +328,39 @@ async def horario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
 
-    if not args:
+    if len(args) < 2:
 
         await update.message.reply_text(
-            "Use:\n/horario 08:00"
+            """
+Use:
+
+/horario manha 08:00
+
+/horario tarde 15:00
+"""
         )
 
         return
 
-    novo_horario = args[0]
+    periodo = args[0].lower()
+
+    novo_horario = args[1]
+
+    if periodo not in ["manha", "tarde"]:
+
+        await update.message.reply_text(
+            "❌ Use manha ou tarde"
+        )
+
+        return
 
     salvar_config(
-        "horario",
+        f"horario_{periodo}",
         novo_horario
     )
 
     await update.message.reply_text(
-        f"⏰ Horário definido para {novo_horario}"
+        f"✅ Horário da {periodo} salvo: {novo_horario}"
     )
 
 # =========================================
@@ -448,13 +400,7 @@ async def mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.message.from_user.id):
-        return
-
-    salvar_config(
-        "ativo",
-        "1"
-    )
+    salvar_config("ativo", "1")
 
     await update.message.reply_text(
         "🟢 Sistema ativado"
@@ -466,13 +412,7 @@ async def ligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.message.from_user.id):
-        return
-
-    salvar_config(
-        "ativo",
-        "0"
-    )
+    salvar_config("ativo", "0")
 
     await update.message.reply_text(
         "🔴 Sistema desligado"
@@ -484,16 +424,18 @@ async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.message.from_user.id):
-        return
-
     agora = datetime.now(TIMEZONE).strftime(
         "%d/%m/%Y %H:%M:%S"
     )
 
-    await update.message.reply_text(
-        f"🟢 BOT ONLINE\n\n🕒 Brasília:\n{agora}"
-    )
+    texto = f"""
+🟢 BOT ONLINE
+
+🕒 Brasília:
+{agora}
+"""
+
+    await update.message.reply_text(texto)
 
 # =========================================
 # ENVIAR AVISO
@@ -506,21 +448,30 @@ async def enviar_aviso(app):
     if ativo != "1":
         return
 
-    horario = pegar_config("horario")
-
-    if not horario:
-        return
-
     agora = datetime.now(TIMEZONE).strftime(
         "%H:%M"
     )
 
-    if agora != horario:
+    horario_manha = pegar_config("horario_manha")
+
+    horario_tarde = pegar_config("horario_tarde")
+
+    periodo = None
+
+    if agora == horario_manha:
+
+        periodo = "☀️ Bom dia"
+
+    elif agora == horario_tarde:
+
+        periodo = "🌤 Boa tarde"
+
+    else:
         return
 
     mensagem = pegar_config(
         "mensagem",
-        "Bom dia 🚀"
+        "Respondam 🚀"
     )
 
     cursor.execute(
@@ -546,7 +497,7 @@ async def enviar_aviso(app):
         usuarios_aguardando[user_id] = time.time()
 
     texto = f"""
-📢 AVISO
+📢 {periodo}
 
 {mensagem}
 
@@ -639,23 +590,38 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.message.from_user
 
         user_id = user.id
+
         nome = user.first_name
+
+        chat_type = update.message.chat.type
+
+        chat_id = update.message.chat.id
+
+        # REMOVE COBRANÇA
 
         if user_id in usuarios_aguardando:
 
             del usuarios_aguardando[user_id]
 
-        criar_usuario(user_id, nome)
+        # BLOQUEIA PRIVADO
 
-        if update.message.chat.type == "private":
+        if chat_type == "private":
 
             if not eh_admin(user_id):
 
                 await update.message.reply_text(
-                    "❌ Você não tem acesso"
+                    "❌ Você não tem acesso."
                 )
 
                 return
+
+        # IGNORA MENSAGENS DO GRUPO
+
+        if chat_id == GRUPO_ID:
+
+            return
+
+        # ANTI SPAM
 
         agora = time.time()
 
@@ -666,17 +632,21 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if diferenca < TEMPO_MINIMO:
 
                 await update.message.reply_text(
-                    "⏳ Aguarde um momento"
+                    "⏳ Aguarde um momento."
                 )
 
                 return
 
         ultimo_tempo[user_id] = agora
 
+        # DIGITANDO
+
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING
         )
+
+        # MEMÓRIA
 
         if user_id not in memoria:
             memoria[user_id] = []
@@ -688,6 +658,8 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         memoria[user_id] = memoria[user_id][-MAX_MSG:]
 
         historico = "\n".join(memoria[user_id])
+
+        # PROMPT
 
         prompt = f"""
 {SYSTEM_PROMPT}
@@ -712,9 +684,13 @@ IA:
             f"IA: {texto}"
         )
 
+        # DELAY HUMANO
+
         await asyncio.sleep(
             random.uniform(0.8, 1.8)
         )
+
+        # DIVIDIR TEXTO
 
         LIMITE_TELEGRAM = 3500
 
@@ -732,7 +708,7 @@ IA:
         logging.error(str(e))
 
         await update.message.reply_text(
-            "❌ Erro temporário na IA"
+            "❌ Erro temporário na IA."
         )
 
 # =========================================
@@ -746,7 +722,6 @@ async def main():
     await configurar_comandos(app)
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("comandos", comandos))
     app.add_handler(CommandHandler("addfuncionario", addfuncionario))
     app.add_handler(CommandHandler("removerfuncionario", removerfuncionario))
     app.add_handler(CommandHandler("listar", listar))
@@ -779,7 +754,9 @@ async def main():
     print("🚀 BOT ONLINE")
 
     await app.initialize()
+
     await app.start()
+
     await app.updater.start_polling()
 
     while True:
