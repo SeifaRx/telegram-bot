@@ -2,6 +2,7 @@ from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
+    CommandHandler,
     ContextTypes,
     filters,
 )
@@ -19,6 +20,20 @@ import asyncio
 
 TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+# =========================================
+# VERIFICA VARIÁVEIS
+# =========================================
+
+if not TOKEN:
+    raise Exception("TOKEN do Telegram não encontrado.")
+
+if not GROQ_API_KEY:
+    raise Exception("GROQ_API_KEY não encontrada.")
+
+# =========================================
+# CLIENTE GROQ
+# =========================================
 
 client = Groq(
     api_key=GROQ_API_KEY
@@ -39,51 +54,49 @@ MAX_MSG = 20
 SYSTEM_PROMPT = """
 Você é uma inteligência artificial extremamente avançada, inteligente e natural.
 
-Seu comportamento deve ser muito parecido com ChatGPT premium.
+Seu comportamento deve ser parecido com ChatGPT.
 
-REGRAS ABSOLUTAS:
+REGRAS:
 
 - Responda sempre em português brasileiro
 - Nunca fale como robô
-- Nunca use linguagem artificial
-- Seja extremamente natural
-- Converse como um humano inteligente
-- Adapte o tom ao usuário
-- Seja amigável
-- Seja fluida
-- Seja moderna
-- Demonstre raciocínio real
-- Explique bem quando necessário
+- Seja natural
+- Seja humana
+- Seja inteligente
+- Converse como uma pessoa real
 - Não faça textões desnecessários
-- Seja objetiva quando a pergunta for simples
-- Faça perguntas quando fizer sentido
-- Nunca repita informações
-- Nunca pareça suporte automático
-- Nunca use frases como:
-  "estou aqui para ajudar"
-  "ferramenta poderosa"
-  "objetivo de venda"
+- Explique bem quando necessário
+- Seja objetiva quando precisar
+- Use linguagem moderna
+- Demonstre personalidade
+- Seja amigável
+- Nunca use frases artificiais
+- Não pareça suporte automático
 - Use quebra de linha para melhorar leitura
 - Seja conversacional
-- Demonstre personalidade
-- Seja parecida com ChatGPT
-- Respostas humanas e inteligentes
-- Nunca responda seco demais
-- Nunca responda formal demais
+- Faça perguntas quando fizer sentido
+- Nunca repita informações
 - Não invente informações falsas
-- Se não souber algo, diga com naturalidade
 
 ESTILO:
 - Inteligente
+- Moderna
 - Natural
 - Conversa humana
-- Moderna
-- Persuasiva
-- Fluida
 """
 
 # =========================================
-# FUNÇÃO PRINCIPAL
+# START
+# =========================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+        "🤖 IA ONLINE 🚀"
+    )
+
+# =========================================
+# RESPOSTA
 # =========================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,7 +113,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         mensagem = mensagem.strip()
 
-        if len(mensagem) < 1:
+        if mensagem == "":
             return
 
         user_id = update.message.from_user.id
@@ -137,31 +150,33 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         memoria[user_id] = memoria[user_id][-MAX_MSG:]
 
         # =========================================
-        # PERSONALIDADE DINÂMICA
+        # ESTILO DINÂMICO
         # =========================================
 
-        msg_lower = mensagem.lower()
+        mensagem_lower = mensagem.lower()
 
         estilo_extra = ""
 
-        if any(p in msg_lower for p in ["triste", "depress", "sozinho", "mal"]):
+        if any(p in mensagem_lower for p in ["triste", "sozinho", "mal", "depress"]):
+
             estilo_extra = """
-            Seja mais empática.
-            Demonstre emoção e acolhimento.
+            Seja mais empática e acolhedora.
             """
 
-        elif any(p in msg_lower for p in ["comprar", "vender", "cliente", "marketing"]):
+        elif any(p in mensagem_lower for p in ["vendas", "marketing", "cliente", "comprar"]):
+
             estilo_extra = """
             Seja mais persuasiva e estratégica.
             """
 
-        elif any(p in msg_lower for p in ["código", "python", "programação", "script"]):
+        elif any(p in mensagem_lower for p in ["python", "código", "script", "programação"]):
+
             estilo_extra = """
-            Seja mais técnica e inteligente.
-            Explique de forma clara.
+            Seja mais técnica e clara.
             """
 
         else:
+
             estilo_extra = """
             Seja natural e conversacional.
             """
@@ -184,13 +199,11 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # =========================================
 
         resposta = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",
             messages=messages,
-            temperature=0.85,
+            temperature=0.8,
             top_p=0.95,
-            max_tokens=500,
-            frequency_penalty=0.3,
-            presence_penalty=0.3,
+            max_tokens=400,
         )
 
         texto = resposta.choices[0].message.content.strip()
@@ -212,12 +225,10 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         })
 
         # =========================================
-        # PEQUENO DELAY HUMANO
+        # DELAY HUMANO
         # =========================================
 
-        tamanho = len(texto)
-
-        delay = min(tamanho / 80, 3)
+        delay = min(len(texto) / 100, 2)
 
         await asyncio.sleep(delay)
 
@@ -229,21 +240,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("ERRO:", e)
+        print("ERRO COMPLETO:")
+        print(str(e))
 
         await update.message.reply_text(
-            "❌ Erro temporário na inteligência artificial."
+            f"❌ Erro na IA:\n{str(e)}"
         )
-
-# =========================================
-# START
-# =========================================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text(
-        "🤖 IA ONLINE 🚀"
-    )
 
 # =========================================
 # APP
@@ -251,6 +253,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = ApplicationBuilder().token(TOKEN).build()
 
+# comando /start
+app.add_handler(
+    CommandHandler("start", start)
+)
+
+# mensagens
 app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -259,5 +267,9 @@ app.add_handler(
 )
 
 print("🚀 BOT ONLINE")
+
+# =========================================
+# INICIA BOT
+# =========================================
 
 app.run_polling()
