@@ -9,7 +9,7 @@ from telegram.ext import (
 from groq import Groq
 import os
 
-TOKEN = os.getenv("key")
+TOKEN = os.getenv("TOKEN")
 
 client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
@@ -32,9 +32,13 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = f"""
 Você é uma IA extremamente inteligente.
 
-Responda sempre em português.
+REGRAS:
+- Responda sempre em português brasileiro
+- Seja humana
+- Seja natural
+- Seja inteligente
 
-Conversa:
+CONVERSA:
 {historico}
 """
 
@@ -65,6 +69,6 @@ app.add_handler(
     )
 )
 
-print("BOT ONLINE 🚀")
+print("🚀 BOT ONLINE")
 
 app.run_polling()
