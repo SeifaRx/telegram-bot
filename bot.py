@@ -97,8 +97,11 @@ RESPOSTA:
         # salva resposta
         memoria[user_id].append(f"Bot: {texto}")
 
-        # envia resposta
-        await update.message.reply_text(texto)
+        # divide mensagens grandes
+        partes = [texto[i:i+4000] for i in range(0, len(texto), 4000)]
+
+        for parte in partes:
+            await update.message.reply_text(parte)
 
     except Exception as e:
 
@@ -109,23 +112,17 @@ RESPOSTA:
         )
 
 # =========================
-# START
-# =========================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text(
-        "🤖 IA ONLINE E FUNCIONANDO 🚀"
-    )
-
-# =========================
 # APP
 # =========================
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-# comando /start
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder))
+app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        responder
+    )
+)
 
 print("🚀 BOT ONLINE")
 
