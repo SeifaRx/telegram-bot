@@ -36,7 +36,7 @@ logging.basicConfig(
 TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# SEU ID TELEGRAM
+# COLOQUE SEU ID TELEGRAM
 ADMIN_ID = 5651378630
 
 # =========================================
@@ -179,6 +179,11 @@ responda rápido
 explique muito bem
 
 - Adapte o tamanho da resposta automaticamente
+
+- Nunca corte respostas no meio
+- Sempre finalize o raciocínio
+- Se a resposta for longa:
+continue até terminar completamente
 """
 
 # =========================================
@@ -682,13 +687,13 @@ IA:
             prompt,
             generation_config={
                 "temperature": 0.8,
-                "max_output_tokens": 250,
+                "max_output_tokens": 500,
             }
         )
 
         texto = resposta.text.strip()
 
-        texto = texto[:3000]
+        texto = texto[:12000]
 
         memoria[user_id].append(
             f"IA: {texto}"
@@ -706,10 +711,19 @@ IA:
         await asyncio.sleep(delay)
 
         # =========================================
-        # ENVIA
+        # DIVIDIR MENSAGENS
         # =========================================
 
-        await update.message.reply_text(texto)
+        LIMITE_TELEGRAM = 3500
+
+        partes = [
+            texto[i:i + LIMITE_TELEGRAM]
+            for i in range(0, len(texto), LIMITE_TELEGRAM)
+        ]
+
+        for parte in partes:
+
+            await update.message.reply_text(parte)
 
     except Exception as e:
 
