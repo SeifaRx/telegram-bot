@@ -13,7 +13,21 @@ import google.generativeai as genai
 
 import os
 import asyncio
+import sqlite3
+import random
+import logging
+import time
+
 from datetime import datetime
+
+# =========================================
+# LOGS
+# =========================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # =========================================
 # VARIÁVEIS
@@ -41,10 +55,33 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# modelo mais econômico
+# MODELO MAIS ECONÔMICO
 model = genai.GenerativeModel(
     "gemini-2.5-flash-lite"
 )
+
+# =========================================
+# DATABASE SQLITE
+# =========================================
+
+conn = sqlite3.connect(
+    "bot.db",
+    check_same_thread=False
+)
+
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS usuarios (
+    user_id INTEGER PRIMARY KEY,
+    nome TEXT,
+    mensagens INTEGER DEFAULT 0,
+    modo TEXT DEFAULT 'normal',
+    criado_em TEXT
+)
+""")
+
+conn.commit()
 
 # =========================================
 # MEMÓRIA
@@ -69,128 +106,329 @@ alerta_2_enviado = False
 ULTIMO_DIA = datetime.now().day
 
 # =========================================
+# ANTI SPAM
+# =========================================
+
+ultimo_tempo = {}
+
+TEMPO_MINIMO = 1.5
+
+# =========================================
 # SYSTEM PROMPT
 # =========================================
 
 SYSTEM_PROMPT = """
-Você é uma inteligência artificial extremamente inteligente e natural.
+Você é uma inteligência artificial extremamente inteligente e humana.
 
 REGRAS:
 - Responda em português brasileiro
-- Seja humana
 - Nunca fale como robô
-- Seja parecida com ChatGPT
-- Converse naturalmente
-- Seja inteligente
+- Seja natural
 - Seja amigável
+- Seja moderna
+- Seja parecida com ChatGPT
 - Não faça textões
 - Explique bem quando necessário
 - Use quebra de linha
-- Seja moderna
+- Varie respostas
+- Não repita frases
 - Demonstre personalidade
-- Não repita informações
-- Faça perguntas quando fizer sentido
+- Converse como humano
 """
 
 # =========================================
-# /START
+# VERIFICA ADMIN
+# =========================================
+
+def eh_admin(user_id):
+
+    return user_id == ADMIN_ID
+
+# =========================================
+# DATABASE
+# =========================================
+
+def criar_usuario(user_id, nome):
+
+    cursor.execute(
+        "SELECT * FROM usuarios WHERE user_id=?",
+        (user_id,)
+    )
+
+    usuario = cursor.fetchone()
+
+    if not usuario:
+
+        cursor.execute("""
+        INSERT INTO usuarios
+        (user_id, nome, mensagens, criado_em)
+        VALUES (?, ?, ?, ?)
+        """, (
+            user_id,
+            nome,
+            0,
+            str(datetime.now())
+        ))
+
+        conn.commit()
+
+def adicionar_msg(user_id):
+
+    cursor.execute("""
+    UPDATE usuarios
+    SET mensagens = mensagens + 1
+    WHERE user_id=?
+    """, (user_id,))
+
+    conn.commit()
+
+def pegar_modo(user_id):
+
+    cursor.execute("""
+    SELECT modo FROM usuarios
+    WHERE user_id=?
+    """, (user_id,))
+
+    resultado = cursor.fetchone()
+
+    if resultado:
+        return resultado[0]
+
+    return "normal"
+
+# =========================================
+# START
 # =========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if not eh_admin(update.message.from_user.id):
+        return
+
     texto = """
 🤖 IA ONLINE 🚀
 
-COMANDOS DISPONÍVEIS:
+COMANDOS:
 
-/start → iniciar bot
-/comandos → lista de comandos
-/limites → ver uso atual da IA
-/resetar → resetar contador manualmente
+/comandos
+/limites
+/stats
+/perfil
+/limpar
+/modo
+/ping
 
-Só mandar mensagem normalmente para conversar com a IA.
+Converse normalmente com a IA.
 """
 
     await update.message.reply_text(texto)
 
 # =========================================
-# /COMANDOS
+# COMANDOS
 # =========================================
 
 async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if not eh_admin(update.message.from_user.id):
+        return
+
     texto = """
-📌 COMANDOS:
+📌 COMANDOS DISPONÍVEIS
 
-/start → iniciar bot
+/start → iniciar
 
-/comandos → mostrar comandos
+/comandos → ver comandos
 
-/limites → mostrar uso atual da IA
+/limites → uso da IA
 
-/resetar → resetar contador manualmente
+/stats → estatísticas
+
+/perfil → seu perfil
+
+/limpar → limpar memória
+
+/modo normal
+/modo coach
+/modo engraçado
+/modo frio
+
+/ping → status bot
 """
 
     await update.message.reply_text(texto)
 
 # =========================================
-# /LIMITES
+# PING
+# =========================================
+
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not eh_admin(update.message.from_user.id):
+        return
+
+    await update.message.reply_text(
+        "🟢 BOT ONLINE"
+    )
+
+# =========================================
+# LIMITES
 # =========================================
 
 async def limites(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    global TOTAL_MSG
-
-    restante_1 = ALERTA_1 - TOTAL_MSG
-    restante_2 = ALERTA_2 - TOTAL_MSG
+    if not eh_admin(update.message.from_user.id):
+        return
 
     texto = f"""
-📊 STATUS DA IA
+📊 USO DA IA
 
-Mensagens usadas hoje:
+Mensagens hoje:
 {TOTAL_MSG}
 
-⚠️ Primeiro alerta:
+⚠️ Alerta 1:
 {ALERTA_1}
 
-🚨 Segundo alerta:
+🚨 Alerta 2:
 {ALERTA_2}
-
-📉 Faltam para alerta 1:
-{restante_1}
-
-📉 Faltam para alerta 2:
-{restante_2}
 """
 
     await update.message.reply_text(texto)
 
 # =========================================
-# /RESETAR
+# STATS
 # =========================================
 
-async def resetar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    global TOTAL_MSG
-    global alerta_1_enviado
-    global alerta_2_enviado
+    if not eh_admin(update.message.from_user.id):
+        return
 
-    # somente admin
-    if update.message.from_user.id != ADMIN_ID:
+    cursor.execute(
+        "SELECT COUNT(*) FROM usuarios"
+    )
+
+    usuarios = cursor.fetchone()[0]
+
+    texto = f"""
+📈 ESTATÍSTICAS
+
+👥 Usuários:
+{usuarios}
+
+💬 Mensagens hoje:
+{TOTAL_MSG}
+"""
+
+    await update.message.reply_text(texto)
+
+# =========================================
+# PERFIL
+# =========================================
+
+async def perfil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not eh_admin(update.message.from_user.id):
+        return
+
+    user_id = update.message.from_user.id
+
+    cursor.execute("""
+    SELECT nome, mensagens, modo, criado_em
+    FROM usuarios
+    WHERE user_id=?
+    """, (user_id,))
+
+    usuario = cursor.fetchone()
+
+    if not usuario:
+        return
+
+    texto = f"""
+👤 PERFIL
+
+Nome:
+{usuario[0]}
+
+Mensagens:
+{usuario[1]}
+
+Modo:
+{usuario[2]}
+
+Criado em:
+{usuario[3]}
+"""
+
+    await update.message.reply_text(texto)
+
+# =========================================
+# LIMPAR MEMÓRIA
+# =========================================
+
+async def limpar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not eh_admin(update.message.from_user.id):
+        return
+
+    user_id = update.message.from_user.id
+
+    memoria[user_id] = []
+
+    await update.message.reply_text(
+        "🧠 Memória limpa."
+    )
+
+# =========================================
+# MODOS
+# =========================================
+
+async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not eh_admin(update.message.from_user.id):
+        return
+
+    user_id = update.message.from_user.id
+
+    args = context.args
+
+    if not args:
 
         await update.message.reply_text(
-            "❌ Apenas admin."
+            "Use:\n/modo normal\n/modo coach\n/modo engraçado\n/modo frio"
         )
 
         return
 
-    TOTAL_MSG = 0
+    novo_modo = args[0].lower()
 
-    alerta_1_enviado = False
-    alerta_2_enviado = False
+    modos_validos = [
+        "normal",
+        "coach",
+        "engraçado",
+        "frio"
+    ]
+
+    if novo_modo not in modos_validos:
+
+        await update.message.reply_text(
+            "❌ Modo inválido."
+        )
+
+        return
+
+    cursor.execute("""
+    UPDATE usuarios
+    SET modo=?
+    WHERE user_id=?
+    """, (
+        novo_modo,
+        user_id
+    ))
+
+    conn.commit()
 
     await update.message.reply_text(
-        "✅ Contador resetado."
+        f"✅ Modo alterado para: {novo_modo}"
     )
 
 # =========================================
@@ -214,6 +452,48 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not mensagem:
             return
 
+        user = update.message.from_user
+
+        user_id = user.id
+
+        nome = user.first_name
+
+        # =========================================
+        # BLOQUEIA PRIVADO
+        # =========================================
+
+        chat_type = update.message.chat.type
+
+        if chat_type == "private":
+
+            if not eh_admin(user_id):
+
+                await update.message.reply_text(
+                    "❌ Você não tem acesso a este bot."
+                )
+
+                return
+
+        # =========================================
+        # ANTI SPAM
+        # =========================================
+
+        agora = time.time()
+
+        if user_id in ultimo_tempo:
+
+            diferenca = agora - ultimo_tempo[user_id]
+
+            if diferenca < TEMPO_MINIMO:
+
+                await update.message.reply_text(
+                    "⏳ Aguarde um momento."
+                )
+
+                return
+
+        ultimo_tempo[user_id] = agora
+
         # =========================================
         # RESET DIÁRIO
         # =========================================
@@ -229,10 +509,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             ULTIMO_DIA = dia_atual
 
-        # =========================================
-        # CONTADOR
-        # =========================================
-
         TOTAL_MSG += 1
 
         # =========================================
@@ -245,7 +521,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text="⚠️ O bot já usou bastante limite da IA."
+                text="⚠️ Limite da IA chegando perto."
             )
 
         if TOTAL_MSG >= ALERTA_2 and not alerta_2_enviado:
@@ -254,18 +530,30 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
-                text="🚨 ATENÇÃO: limite da IA está quase acabando."
+                text="🚨 Limite da IA quase acabando."
             )
 
-        user_id = update.message.from_user.id
+        # =========================================
+        # DATABASE
+        # =========================================
 
-        # digitando
+        criar_usuario(user_id, nome)
+
+        adicionar_msg(user_id)
+
+        # =========================================
+        # DIGITANDO
+        # =========================================
+
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action=ChatAction.TYPING
         )
 
-        # memória
+        # =========================================
+        # MEMÓRIA
+        # =========================================
+
         if user_id not in memoria:
             memoria[user_id] = []
 
@@ -275,11 +563,37 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         memoria[user_id] = memoria[user_id][-MAX_MSG:]
 
-        # histórico
         historico = "\n".join(memoria[user_id])
+
+        # =========================================
+        # MODO
+        # =========================================
+
+        modo_usuario = pegar_modo(user_id)
+
+        estilo = ""
+
+        if modo_usuario == "coach":
+            estilo = "Seja motivadora e estratégica."
+
+        elif modo_usuario == "engraçado":
+            estilo = "Seja divertida e descontraída."
+
+        elif modo_usuario == "frio":
+            estilo = "Seja objetiva e direta."
+
+        else:
+            estilo = "Seja natural."
+
+        # =========================================
+        # PROMPT
+        # =========================================
 
         prompt = f"""
 {SYSTEM_PROMPT}
+
+ESTILO:
+{estilo}
 
 CONVERSA:
 {historico}
@@ -287,7 +601,10 @@ CONVERSA:
 IA:
 """
 
+        # =========================================
         # IA
+        # =========================================
+
         resposta = model.generate_content(
             prompt,
             generation_config={
@@ -304,17 +621,26 @@ IA:
             f"IA: {texto}"
         )
 
-        # delay humano
-        delay = min(len(texto) / 120, 1.5)
+        # =========================================
+        # DELAY HUMANO
+        # =========================================
+
+        delay = random.uniform(
+            0.8,
+            1.8
+        )
 
         await asyncio.sleep(delay)
 
-        # envia
+        # =========================================
+        # ENVIA
+        # =========================================
+
         await update.message.reply_text(texto)
 
     except Exception as e:
 
-        print("ERRO:", str(e))
+        logging.error(str(e))
 
         await update.message.reply_text(
             "❌ Erro temporário na IA."
@@ -326,21 +652,14 @@ IA:
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(
-    CommandHandler("start", start)
-)
-
-app.add_handler(
-    CommandHandler("comandos", comandos)
-)
-
-app.add_handler(
-    CommandHandler("limites", limites)
-)
-
-app.add_handler(
-    CommandHandler("resetar", resetar)
-)
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("comandos", comandos))
+app.add_handler(CommandHandler("limites", limites))
+app.add_handler(CommandHandler("stats", stats))
+app.add_handler(CommandHandler("perfil", perfil))
+app.add_handler(CommandHandler("limpar", limpar))
+app.add_handler(CommandHandler("modo", modo))
+app.add_handler(CommandHandler("ping", ping))
 
 app.add_handler(
     MessageHandler(
