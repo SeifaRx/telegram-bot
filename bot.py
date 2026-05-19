@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# SEU ID TELEGRAM
+# IDs DOS ADMINS
 ADMIN_IDS = [5651378630]
 
 # ID DO GRUPO
@@ -37,7 +37,9 @@ TIMEZONE = ZoneInfo("America/Sao_Paulo")
 # GEMINI
 # ==================================================
 
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(
+    api_key=GEMINI_API_KEY
+)
 
 model = genai.GenerativeModel(
     "gemini-2.5-flash"
@@ -84,9 +86,9 @@ MAX_MEMORIA = 10
 # CONFIGURAÇÕES
 # ==================================================
 
-mensagem_manha = "Bom dia 🚀"
+mensagem_manha = "Verificar tarefas da manhã."
 
-mensagem_tarde = "Boa tarde 🚀"
+mensagem_tarde = "Verificar tarefas da tarde."
 
 horario_manha = "08:00"
 
@@ -105,6 +107,7 @@ ultimo_envio = ""
 # ==================================================
 
 def eh_admin(user_id):
+
     return user_id in ADMIN_IDS
 
 # ==================================================
@@ -138,7 +141,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 🤖 BOT ONLINE
 
-COMANDOS:
+📌 COMANDOS
 
 /addfuncionario ID Nome
 
@@ -146,9 +149,9 @@ COMANDOS:
 
 /listar
 
-/manha mensagem
+/manha tarefa da manhã
 
-/tarde mensagem
+/tarde tarefa da tarde
 
 /horario_manha 08:00
 
@@ -279,7 +282,7 @@ async def manha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_manha = " ".join(context.args)
 
     await update.message.reply_text(
-        "✅ Mensagem da manhã salva."
+        "✅ Tarefa da manhã salva."
     )
 
 # ==================================================
@@ -299,7 +302,7 @@ async def tarde(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_tarde = " ".join(context.args)
 
     await update.message.reply_text(
-        "✅ Mensagem da tarde salva."
+        "✅ Tarefa da tarde salva."
     )
 
 # ==================================================
@@ -355,21 +358,21 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
     hora_atual = agora.strftime("%H:%M")
 
     periodo = None
-    mensagem = None
+    tarefa = None
 
     if hora_atual == horario_manha:
 
-        periodo = "🌅 MANHÃ"
+        periodo = "🌅 TAREFAS DA MANHÃ"
 
-        mensagem = mensagem_manha
+        tarefa = mensagem_manha
 
     elif hora_atual == horario_tarde:
 
-        periodo = "🌇 TARDE"
+        periodo = "🌇 TAREFAS DA TARDE"
 
-        mensagem = mensagem_tarde
+        tarefa = mensagem_tarde
 
-    if not periodo:
+    else:
         return
 
     controle = f"{agora.date()}-{hora_atual}"
@@ -388,7 +391,13 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
     if not funcionarios:
         return
 
-    marcacoes = ""
+    texto = f"""
+📋 {periodo}
+
+📝 TAREFA:
+{tarefa}
+
+"""
 
     for funcionario in funcionarios:
 
@@ -396,23 +405,21 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
 
         nome = funcionario[1]
 
-        tarefas_pendentes[user_id] = periodo
+        tarefas_pendentes[user_id] = {
+            "periodo": periodo,
+            "tarefa": tarefa
+        }
 
-        marcacoes += (
-            f'<a href="tg://user?id={user_id}">{nome}</a>\n'
+        texto += (
+            f'👤 <a href="tg://user?id={user_id}">{nome}</a>\n'
         )
 
-    texto = f"""
-📢 {periodo}
+    texto += """
 
-{mensagem}
-
-{marcacoes}
-
-Respondam:
-✅ feito
-✅ concluído
-✅ ok
+✅ Responda:
+- feito
+- concluído
+- ok
 """
 
     try:
@@ -423,11 +430,15 @@ Respondam:
             parse_mode="HTML"
         )
 
-        logging.info("Tarefa enviada.")
+        logging.info(
+            "Tarefas enviadas."
+        )
 
     except Exception as e:
 
-        logging.error(f"Erro ao enviar tarefa: {e}")
+        logging.error(
+            f"Erro ao enviar tarefa: {e}"
+        )
 
 # ==================================================
 # IA + RESPOSTAS
@@ -452,47 +463,89 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto_lower = texto.lower()
 
         # ==================================================
-        # CONFIRMAR TAREFA
+        # CONFIRMAÇÃO TAREFA
         # ==================================================
 
-        palavras = [
+        palavras_confirmacao = [
+
             "feito",
             "concluido",
             "concluído",
-            "ok"
+            "ok",
+            "finalizado",
+            "terminei",
+            "pronto"
         ]
 
         if user_id in tarefas_pendentes:
 
-            if any(p in texto_lower for p in palavras):
+            if any(
+                palavra in texto_lower
+                for palavra in palavras_confirmacao
+            ):
+
+                dados = tarefas_pendentes[user_id]
 
                 del tarefas_pendentes[user_id]
 
-                await update.message.reply_text(
-                    "✅ Tarefa concluída confirmada."
+                cursor.execute(
+                    """
+                    SELECT nome
+                    FROM funcionarios
+                    WHERE user_id=?
+                    """,
+                    (user_id,)
                 )
 
-                # AVISA ADMIN
+                resultado = cursor.fetchone()
+
+                nome = (
+                    resultado[0]
+                    if resultado
+                    else str(user_id)
+                )
+
+                await update.message.reply_text(
+                    f"""
+✅ Tarefa concluída
+
+👤 Funcionária:
+{nome}
+
+📋 {dados['periodo']}
+
+📝 {dados['tarefa']}
+"""
+                )
+
+                # AVISA ADMIN NO PRIVADO
 
                 for admin in ADMIN_IDS:
 
-                    await context.bot.send_message(
-                        chat_id=admin,
-                        text=f"""
-📌 Tarefa concluída
+                    try:
 
-👤 Funcionário:
-{user_id}
+                        await context.bot.send_message(
+                            chat_id=admin,
+                            text=f"""
+📌 FUNCIONÁRIA CONCLUIU
 
-💬 Resposta:
+👤 {nome}
+
+📝 Resposta:
 {texto}
+
+📋 Tarefa:
+{dados['tarefa']}
 """
-                    )
+                        )
+
+                    except:
+                        pass
 
                 return
 
         # ==================================================
-        # IA NO GRUPO
+        # IA NO GRUPO SOMENTE CHAMANDO
         # ==================================================
 
         ativar_ia = False
@@ -513,17 +566,13 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ==================================================
-        # PRIVADO
+        # PRIVADO SOMENTE ADMIN
         # ==================================================
 
         if (
             update.effective_chat.type == "private"
             and not eh_admin(user_id)
         ):
-
-            await update.message.reply_text(
-                "❌ Sem acesso."
-            )
 
             return
 
@@ -546,16 +595,17 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         prompt = f"""
-Você é uma IA inteligente e natural.
+Você é uma IA extremamente inteligente.
 
 REGRAS:
 
 - Responda em português
-- Seja objetiva
-- Seja humana
+- Seja natural
+- Seja moderna
 - Use emojis quando necessário
+- Seja organizada
 - Não faça textos gigantes
-- Nunca corte frases
+- Nunca corte respostas
 
 CONVERSA:
 {historico}
@@ -576,10 +626,6 @@ IA:
         memoria[user_id].append(
             f"IA: {resposta_texto}"
         )
-
-        # ==================================================
-        # DIVIDIR MENSAGEM
-        # ==================================================
 
         limite = 3500
 
@@ -641,22 +687,22 @@ async def main():
 
         BotCommand(
             "manha",
-            "Mensagem manhã"
+            "Definir tarefa manhã"
         ),
 
         BotCommand(
             "tarde",
-            "Mensagem tarde"
+            "Definir tarefa tarde"
         ),
 
         BotCommand(
             "horario_manha",
-            "Horário manhã"
+            "Definir horário manhã"
         ),
 
         BotCommand(
             "horario_tarde",
-            "Horário tarde"
+            "Definir horário tarde"
         ),
     ]
 
@@ -725,7 +771,6 @@ async def main():
     # IA
 
     app.add_handler(
-
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             responder
@@ -733,7 +778,7 @@ async def main():
     )
 
     # ==================================================
-    # SCHEDULER
+    # AGENDADOR
     # ==================================================
 
     scheduler = AsyncIOScheduler(
