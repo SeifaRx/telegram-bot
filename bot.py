@@ -15,6 +15,7 @@ import os
 import asyncio
 import sqlite3
 import logging
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,7 @@ from zoneinfo import ZoneInfo
 # ==================================================
 
 TOKEN = os.getenv("TOKEN")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # IDs DOS ADMINS
@@ -407,7 +409,8 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
 
         tarefas_pendentes[user_id] = {
             "periodo": periodo,
-            "tarefa": tarefa
+            "tarefa": tarefa,
+            "data": datetime.now(TIMEZONE).strftime("%Y-%m-%d")
         }
 
         texto += (
@@ -479,12 +482,22 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user_id in tarefas_pendentes:
 
+            dados = tarefas_pendentes[user_id]
+
+            data_hoje = datetime.now(
+                TIMEZONE
+            ).strftime("%Y-%m-%d")
+
+            if dados["data"] != data_hoje:
+
+                del tarefas_pendentes[user_id]
+
+                return
+
             if any(
                 palavra in texto_lower
                 for palavra in palavras_confirmacao
             ):
-
-                dados = tarefas_pendentes[user_id]
 
                 del tarefas_pendentes[user_id]
 
@@ -507,10 +520,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await update.message.reply_text(
                     f"""
-✅ Tarefa concluída
+✅ Tarefa concluída!
 
-👤 Funcionária:
-{nome}
+👏 Bom trabalho, {nome}
 
 📋 {dados['periodo']}
 
@@ -518,7 +530,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
                 )
 
-                # AVISA ADMIN NO PRIVADO
+                # AVISA ADM
 
                 for admin in ADMIN_IDS:
 
@@ -527,7 +539,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await context.bot.send_message(
                             chat_id=admin,
                             text=f"""
-📌 FUNCIONÁRIA CONCLUIU
+📌 FUNCIONÁRIO FINALIZOU
 
 👤 {nome}
 
@@ -536,11 +548,15 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📋 Tarefa:
 {dados['tarefa']}
+
+🕒 Horário:
+{datetime.now(TIMEZONE).strftime('%H:%M:%S')}
 """
                         )
 
-                    except:
-                        pass
+                    except Exception as e:
+
+                        logging.error(e)
 
                 return
 
@@ -577,7 +593,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ==================================================
-        # MEMÓRIA
+        # MEMÓRIA IA
         # ==================================================
 
         if user_id not in memoria:
@@ -710,8 +726,6 @@ async def main():
         comandos
     )
 
-    # COMANDOS
-
     app.add_handler(
         CommandHandler(
             "start",
@@ -767,8 +781,6 @@ async def main():
             horario_t
         )
     )
-
-    # IA
 
     app.add_handler(
         MessageHandler(
