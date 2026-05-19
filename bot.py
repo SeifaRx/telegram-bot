@@ -8,6 +8,7 @@ from telegram.ext import (
 )
 
 from telegram.constants import ChatAction
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import google.generativeai as genai
@@ -39,7 +40,7 @@ TOKEN = os.getenv("TOKEN")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# SEU ID
+# SEU ID TELEGRAM
 ADMIN_ID = 5651378630
 
 # ID DO GRUPO
@@ -87,7 +88,7 @@ CREATE TABLE IF NOT EXISTS configuracoes (
 conn.commit()
 
 # =========================================
-# MEMÓRIA
+# MEMÓRIA IA
 # =========================================
 
 memoria = {}
@@ -98,6 +99,8 @@ ultimo_tempo = {}
 
 tarefas_pendentes = {}
 
+ultimo_envio = ""
+
 # =========================================
 # PROMPT IA
 # =========================================
@@ -107,7 +110,7 @@ Você é uma IA extremamente inteligente.
 
 REGRAS:
 
-- Responda em português
+- Responda sempre em português
 - Seja humana
 - Seja moderna
 - Seja útil
@@ -125,6 +128,18 @@ REGRAS:
 def eh_admin(user_id):
 
     return user_id == ADMIN_ID
+
+def comando_liberado(update):
+
+    # SOMENTE PRIVADO
+    if update.effective_chat.type != "private":
+        return False
+
+    # SOMENTE ADMIN
+    if update.effective_user.id != ADMIN_ID:
+        return False
+
+    return True
 
 def salvar_config(chave, valor):
 
@@ -158,6 +173,9 @@ def pegar_config(chave, padrao=None):
 # =========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not comando_liberado(update):
+        return
 
     texto = """
 🤖 BOT ONLINE
@@ -193,7 +211,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     horario_manha = pegar_config(
@@ -204,6 +222,16 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     horario_tarde = pegar_config(
         "horario_tarde",
         "Não definido"
+    )
+
+    tarefa_manha = pegar_config(
+        "tarefa_manha",
+        "Não definida"
+    )
+
+    tarefa_tarde = pegar_config(
+        "tarefa_tarde",
+        "Não definida"
     )
 
     ativo = pegar_config(
@@ -218,13 +246,22 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     texto = f"""
-📊 STATUS
+📊 STATUS BOT
 
-☀️ Manhã: {horario_manha}
+☀️ Horário manhã:
+{horario_manha}
 
-🌤 Tarde: {horario_tarde}
+🌤 Horário tarde:
+{horario_tarde}
 
-⚙️ Sistema: {sistema}
+📌 Tarefa manhã:
+{tarefa_manha}
+
+📌 Tarefa tarde:
+{tarefa_tarde}
+
+⚙️ Sistema:
+{sistema}
 """
 
     await update.message.reply_text(texto)
@@ -235,7 +272,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     try:
@@ -271,7 +308,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     try:
@@ -301,7 +338,7 @@ async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     cursor.execute(
@@ -335,12 +372,12 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def horario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     try:
 
-        periodo = context.args[0]
+        periodo = context.args[0].lower()
 
         hora = context.args[1]
 
@@ -350,7 +387,7 @@ async def horario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"✅ Horário salvo: {hora}"
+            f"✅ Horário da {periodo} salvo!"
         )
 
     except:
@@ -371,7 +408,7 @@ Use:
 
 async def tarefa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     try:
@@ -407,7 +444,7 @@ Use:
 
 async def ligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     salvar_config("ativo", "1")
@@ -422,7 +459,7 @@ async def ligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not eh_admin(update.effective_user.id):
+    if not comando_liberado(update):
         return
 
     salvar_config("ativo", "0")
@@ -432,12 +469,10 @@ async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================================
-# ENVIAR TAREFAS
+# ENVIAR AVISO
 # =========================================
 
-ultimo_envio = None
-
-async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
+async def enviar_aviso(app):
 
     global ultimo_envio
 
@@ -462,8 +497,10 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
     )
 
     periodo = None
-    tarefa_texto = None
+
     saudacao = None
+
+    tarefa_texto = None
 
     # =====================================
     # MANHÃ
@@ -499,7 +536,7 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
         return
 
     controle = (
-        f"{agora.strftime('%Y-%m-%d')} "
+        f"{agora.strftime('%Y-%m-%d')}"
         f"{horario_atual}"
     )
 
@@ -550,21 +587,21 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
 {marcacoes}
 """
 
-    await context.bot.send_message(
+    await app.bot.send_message(
         chat_id=GRUPO_ID,
         text=texto,
         parse_mode="HTML"
     )
 
     asyncio.create_task(
-        cobrar_ausentes(context, periodo)
+        cobrar_ausentes(app, periodo)
     )
 
 # =========================================
 # COBRAR AUSENTES
 # =========================================
 
-async def cobrar_ausentes(context, periodo):
+async def cobrar_ausentes(app, periodo):
 
     await asyncio.sleep(600)
 
@@ -599,12 +636,12 @@ async def cobrar_ausentes(context, periodo):
         return
 
     texto = f"""
-⚠️ Funcionários sem resposta da tarefa da {periodo}:
+⚠️ Funcionários sem responder tarefa da {periodo}:
 
 {marcacoes}
 """
 
-    await context.bot.send_message(
+    await app.bot.send_message(
         chat_id=GRUPO_ID,
         text=texto,
         parse_mode="HTML"
@@ -649,13 +686,9 @@ async def verificar_tarefa(update, context):
 
     nome = update.effective_user.first_name
 
-    # RESPONDE NO GRUPO
-
     await update.message.reply_text(
         f"✅ Tarefa da {periodo} confirmada!"
     )
-
-    # AVISA ADMIN
 
     await context.bot.send_message(
         chat_id=ADMIN_ID,
@@ -688,7 +721,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
 
         # =================================
-        # CONFIRMA TAREFA
+        # CONFIRMAR TAREFA
         # =================================
 
         concluiu = await verificar_tarefa(
@@ -928,7 +961,7 @@ async def main():
         enviar_aviso,
         "interval",
         seconds=30,
-        args=[app]
+        kwargs={"app": app}
     )
 
     scheduler.start()
