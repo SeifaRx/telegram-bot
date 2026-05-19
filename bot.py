@@ -1,13 +1,11 @@
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
-    MessageHandler,
     CommandHandler,
+    MessageHandler,
     ContextTypes,
     filters,
 )
-
-from telegram.constants import ChatAction
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -17,52 +15,46 @@ import os
 import asyncio
 import sqlite3
 import logging
-import random
-import time
-
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-# =========================================
+# ==================================================
+# CONFIG
+# ==================================================
+
+TOKEN = os.getenv("TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# SEU ID TELEGRAM
+ADMIN_IDS = [5651378630]
+
+# ID DO GRUPO
+GRUPO_ID = -1002913144849
+
+TIMEZONE = ZoneInfo("America/Sao_Paulo")
+
+# ==================================================
+# GEMINI
+# ==================================================
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+model = genai.GenerativeModel(
+    "gemini-2.5-flash"
+)
+
+# ==================================================
 # LOGS
-# =========================================
+# ==================================================
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# =========================================
-# CONFIG
-# =========================================
-
-TOKEN = os.getenv("TOKEN")
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# SEU ID TELEGRAM
-ADMIN_ID = 5651378630
-
-# ID DO GRUPO
-GRUPO_ID = -1001234567890
-
-TIMEZONE = ZoneInfo("America/Sao_Paulo")
-
-# =========================================
-# GEMINI
-# =========================================
-
-genai.configure(
-    api_key=GEMINI_API_KEY
-)
-
-model = genai.GenerativeModel(
-    "gemini-2.5-flash"
-)
-
-# =========================================
+# ==================================================
 # DATABASE
-# =========================================
+# ==================================================
 
 conn = sqlite3.connect(
     "bot.db",
@@ -72,115 +64,81 @@ conn = sqlite3.connect(
 cursor = conn.cursor()
 
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS funcionarios (
+CREATE TABLE IF NOT EXISTS funcionarios(
     user_id INTEGER PRIMARY KEY,
     nome TEXT
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS configuracoes (
-    chave TEXT PRIMARY KEY,
-    valor TEXT
-)
-""")
-
 conn.commit()
 
-# =========================================
+# ==================================================
 # MEMÓRIA IA
-# =========================================
+# ==================================================
 
 memoria = {}
 
-MAX_MSG = 12
+MAX_MEMORIA = 10
 
-ultimo_tempo = {}
+# ==================================================
+# CONFIGURAÇÕES
+# ==================================================
+
+mensagem_manha = "Bom dia 🚀"
+
+mensagem_tarde = "Boa tarde 🚀"
+
+horario_manha = "08:00"
+
+horario_tarde = "15:00"
+
+# ==================================================
+# CONTROLE
+# ==================================================
 
 tarefas_pendentes = {}
 
 ultimo_envio = ""
 
-# =========================================
-# PROMPT IA
-# =========================================
-
-SYSTEM_PROMPT = """
-Você é uma IA extremamente inteligente.
-
-REGRAS:
-
-- Responda sempre em português
-- Seja humana
-- Seja moderna
-- Seja útil
-- Seja natural
-- Nunca corte frases
-- Não faça textos gigantes
-- Use emojis quando fizer sentido
-- Seja parecida com ChatGPT
-"""
-
-# =========================================
+# ==================================================
 # FUNÇÕES
-# =========================================
+# ==================================================
 
 def eh_admin(user_id):
+    return user_id in ADMIN_IDS
 
-    return user_id == ADMIN_ID
+# ==================================================
+# BLOQUEAR COMANDOS NO GRUPO
+# ==================================================
 
-def comando_liberado(update):
+async def bloquear_grupo(update):
 
-    # SOMENTE PRIVADO
-    if update.effective_chat.type != "private":
-        return False
+    if update.effective_chat.id == GRUPO_ID:
 
-    # SOMENTE ADMIN
-    if update.effective_user.id != ADMIN_ID:
-        return False
+        await update.message.reply_text(
+            "❌ Use comandos apenas no privado."
+        )
 
-    return True
+        return True
 
-def salvar_config(chave, valor):
+    return False
 
-    cursor.execute(
-        """
-        INSERT OR REPLACE INTO configuracoes
-        (chave, valor)
-        VALUES (?, ?)
-        """,
-        (chave, valor)
-    )
-
-    conn.commit()
-
-def pegar_config(chave, padrao=None):
-
-    cursor.execute(
-        "SELECT valor FROM configuracoes WHERE chave=?",
-        (chave,)
-    )
-
-    resultado = cursor.fetchone()
-
-    if resultado:
-        return resultado[0]
-
-    return padrao
-
-# =========================================
+# ==================================================
 # START
-# =========================================
+# ==================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
         return
 
     texto = """
 🤖 BOT ONLINE
 
-📌 COMANDOS
+COMANDOS:
 
 /addfuncionario ID Nome
 
@@ -188,91 +146,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 /listar
 
-/horario manha 08:00
+/manha mensagem
 
-/horario tarde 15:00
+/tarde mensagem
 
-/tarefa manha Fazer relatório
+/horario_manha 08:00
 
-/tarefa tarde Atualizar sistema
-
-/ligar
-
-/desligar
-
-/status
+/horario_tarde 15:00
 """
 
     await update.message.reply_text(texto)
 
-# =========================================
-# STATUS
-# =========================================
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not comando_liberado(update):
-        return
-
-    horario_manha = pegar_config(
-        "horario_manha",
-        "Não definido"
-    )
-
-    horario_tarde = pegar_config(
-        "horario_tarde",
-        "Não definido"
-    )
-
-    tarefa_manha = pegar_config(
-        "tarefa_manha",
-        "Não definida"
-    )
-
-    tarefa_tarde = pegar_config(
-        "tarefa_tarde",
-        "Não definida"
-    )
-
-    ativo = pegar_config(
-        "ativo",
-        "0"
-    )
-
-    sistema = (
-        "🟢 Ligado"
-        if ativo == "1"
-        else "🔴 Desligado"
-    )
-
-    texto = f"""
-📊 STATUS BOT
-
-☀️ Horário manhã:
-{horario_manha}
-
-🌤 Horário tarde:
-{horario_tarde}
-
-📌 Tarefa manhã:
-{tarefa_manha}
-
-📌 Tarefa tarde:
-{tarefa_tarde}
-
-⚙️ Sistema:
-{sistema}
-"""
-
-    await update.message.reply_text(texto)
-
-# =========================================
+# ==================================================
 # ADD FUNCIONÁRIO
-# =========================================
+# ==================================================
 
 async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
         return
 
     try:
@@ -284,7 +178,6 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.execute(
             """
             INSERT OR REPLACE INTO funcionarios
-            (user_id, nome)
             VALUES (?, ?)
             """,
             (user_id, nome)
@@ -293,7 +186,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
 
         await update.message.reply_text(
-            f"✅ {nome} adicionado"
+            f"✅ Funcionário {nome} adicionado."
         )
 
     except:
@@ -302,13 +195,16 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Use:\n/addfuncionario ID Nome"
         )
 
-# =========================================
+# ==================================================
 # REMOVER FUNCIONÁRIO
-# =========================================
+# ==================================================
 
 async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
         return
 
     try:
@@ -323,7 +219,7 @@ async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE)
         conn.commit()
 
         await update.message.reply_text(
-            "🗑 Funcionário removido"
+            "🗑 Funcionário removido."
         )
 
     except:
@@ -332,13 +228,16 @@ async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Use:\n/removerfuncionario ID"
         )
 
-# =========================================
+# ==================================================
 # LISTAR
-# =========================================
+# ==================================================
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
         return
 
     cursor.execute(
@@ -350,7 +249,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not funcionarios:
 
         await update.message.reply_text(
-            "❌ Nenhum funcionário"
+            "❌ Nenhum funcionário."
         )
 
         return
@@ -359,186 +258,121 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for f in funcionarios:
 
-        texto += (
-            f"👤 {f[1]}\n"
-            f"🆔 {f[0]}\n\n"
-        )
+        texto += f"👤 {f[1]}\n🆔 {f[0]}\n\n"
 
     await update.message.reply_text(texto)
 
-# =========================================
-# HORÁRIO
-# =========================================
+# ==================================================
+# CONFIG MANHÃ
+# ==================================================
 
-async def horario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def manha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    global mensagem_manha
+
+    if await bloquear_grupo(update):
         return
 
-    try:
-
-        periodo = context.args[0].lower()
-
-        hora = context.args[1]
-
-        salvar_config(
-            f"horario_{periodo}",
-            hora
-        )
-
-        await update.message.reply_text(
-            f"✅ Horário da {periodo} salvo!"
-        )
-
-    except:
-
-        await update.message.reply_text(
-            """
-Use:
-
-/horario manha 08:00
-
-/horario tarde 15:00
-"""
-        )
-
-# =========================================
-# TAREFA
-# =========================================
-
-async def tarefa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not comando_liberado(update):
+    if not eh_admin(update.effective_user.id):
         return
 
-    try:
-
-        periodo = context.args[0].lower()
-
-        texto = " ".join(context.args[1:])
-
-        salvar_config(
-            f"tarefa_{periodo}",
-            texto
-        )
-
-        await update.message.reply_text(
-            f"✅ Tarefa da {periodo} salva!"
-        )
-
-    except:
-
-        await update.message.reply_text(
-            """
-Use:
-
-/tarefa manha Fazer relatório
-
-/tarefa tarde Atualizar sistema
-"""
-        )
-
-# =========================================
-# LIGAR
-# =========================================
-
-async def ligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not comando_liberado(update):
-        return
-
-    salvar_config("ativo", "1")
+    mensagem_manha = " ".join(context.args)
 
     await update.message.reply_text(
-        "🟢 Sistema ativado"
+        "✅ Mensagem da manhã salva."
     )
 
-# =========================================
-# DESLIGAR
-# =========================================
+# ==================================================
+# CONFIG TARDE
+# ==================================================
 
-async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tarde(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not comando_liberado(update):
+    global mensagem_tarde
+
+    if await bloquear_grupo(update):
         return
 
-    salvar_config("ativo", "0")
+    if not eh_admin(update.effective_user.id):
+        return
+
+    mensagem_tarde = " ".join(context.args)
 
     await update.message.reply_text(
-        "🔴 Sistema desligado"
+        "✅ Mensagem da tarde salva."
     )
 
-# =========================================
-# ENVIAR AVISO
-# =========================================
+# ==================================================
+# HORÁRIO MANHÃ
+# ==================================================
 
-async def enviar_aviso(app):
+async def horario_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    global horario_manha
+
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
+        return
+
+    horario_manha = context.args[0]
+
+    await update.message.reply_text(
+        f"✅ Horário manhã salvo: {horario_manha}"
+    )
+
+# ==================================================
+# HORÁRIO TARDE
+# ==================================================
+
+async def horario_t(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    global horario_tarde
+
+    if await bloquear_grupo(update):
+        return
+
+    if not eh_admin(update.effective_user.id):
+        return
+
+    horario_tarde = context.args[0]
+
+    await update.message.reply_text(
+        f"✅ Horário tarde salvo: {horario_tarde}"
+    )
+
+# ==================================================
+# ENVIAR TAREFAS
+# ==================================================
+
+async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
 
     global ultimo_envio
 
-    ativo = pegar_config(
-        "ativo",
-        "0"
-    )
-
-    if ativo != "1":
-        return
-
     agora = datetime.now(TIMEZONE)
 
-    horario_atual = agora.strftime("%H:%M")
-
-    horario_manha = pegar_config(
-        "horario_manha"
-    )
-
-    horario_tarde = pegar_config(
-        "horario_tarde"
-    )
+    hora_atual = agora.strftime("%H:%M")
 
     periodo = None
+    mensagem = None
 
-    saudacao = None
+    if hora_atual == horario_manha:
 
-    tarefa_texto = None
+        periodo = "🌅 MANHÃ"
 
-    # =====================================
-    # MANHÃ
-    # =====================================
+        mensagem = mensagem_manha
 
-    if horario_atual == horario_manha:
+    elif hora_atual == horario_tarde:
 
-        periodo = "manha"
+        periodo = "🌇 TARDE"
 
-        saudacao = "☀️ Bom dia"
+        mensagem = mensagem_tarde
 
-        tarefa_texto = pegar_config(
-            "tarefa_manha",
-            "Responder tarefa"
-        )
-
-    # =====================================
-    # TARDE
-    # =====================================
-
-    elif horario_atual == horario_tarde:
-
-        periodo = "tarde"
-
-        saudacao = "🌤 Boa tarde"
-
-        tarefa_texto = pegar_config(
-            "tarefa_tarde",
-            "Responder tarefa"
-        )
-
-    else:
+    if not periodo:
         return
 
-    controle = (
-        f"{agora.strftime('%Y-%m-%d')}"
-        f"{horario_atual}"
-    )
+    controle = f"{agora.date()}-{hora_atual}"
 
     if ultimo_envio == controle:
         return
@@ -554,8 +388,6 @@ async def enviar_aviso(app):
     if not funcionarios:
         return
 
-    tarefas_pendentes.clear()
-
     marcacoes = ""
 
     for funcionario in funcionarios:
@@ -567,142 +399,39 @@ async def enviar_aviso(app):
         tarefas_pendentes[user_id] = periodo
 
         marcacoes += (
-            f'<a href="tg://user?id={user_id}">'
-            f'{nome}</a>\n'
+            f'<a href="tg://user?id={user_id}">{nome}</a>\n'
         )
 
     texto = f"""
-📢 {saudacao}
+📢 {periodo}
 
-📌 TAREFA DA {periodo.upper()}:
-
-{tarefa_texto}
-
-✅ Respondam:
-- feito
-- concluído
-- ok
-- terminei
+{mensagem}
 
 {marcacoes}
+
+Respondam:
+✅ feito
+✅ concluído
+✅ ok
 """
 
-    await app.bot.send_message(
-        chat_id=GRUPO_ID,
-        text=texto,
-        parse_mode="HTML"
-    )
+    try:
 
-    asyncio.create_task(
-        cobrar_ausentes(app, periodo)
-    )
-
-# =========================================
-# COBRAR AUSENTES
-# =========================================
-
-async def cobrar_ausentes(app, periodo):
-
-    await asyncio.sleep(600)
-
-    if not tarefas_pendentes:
-        return
-
-    marcacoes = ""
-
-    for user_id in tarefas_pendentes:
-
-        cursor.execute(
-            """
-            SELECT nome
-            FROM funcionarios
-            WHERE user_id=?
-            """,
-            (user_id,)
+        await context.bot.send_message(
+            chat_id=GRUPO_ID,
+            text=texto,
+            parse_mode="HTML"
         )
 
-        resultado = cursor.fetchone()
+        logging.info("Tarefa enviada.")
 
-        if resultado:
+    except Exception as e:
 
-            nome = resultado[0]
+        logging.error(f"Erro ao enviar tarefa: {e}")
 
-            marcacoes += (
-                f'<a href="tg://user?id={user_id}">'
-                f'{nome}</a>\n'
-            )
-
-    if not marcacoes:
-        return
-
-    texto = f"""
-⚠️ Funcionários sem responder tarefa da {periodo}:
-
-{marcacoes}
-"""
-
-    await app.bot.send_message(
-        chat_id=GRUPO_ID,
-        text=texto,
-        parse_mode="HTML"
-    )
-
-# =========================================
-# CONFIRMAR TAREFA
-# =========================================
-
-async def verificar_tarefa(update, context):
-
-    user_id = update.effective_user.id
-
-    if user_id not in tarefas_pendentes:
-        return False
-
-    texto = update.message.text.lower()
-
-    respostas_ok = [
-
-        "feito",
-        "concluido",
-        "concluído",
-        "ok",
-        "terminei",
-        "pronto",
-        "finalizado",
-        "finalizei",
-    ]
-
-    confirmou = any(
-        palavra in texto
-        for palavra in respostas_ok
-    )
-
-    if not confirmou:
-        return False
-
-    periodo = tarefas_pendentes[user_id]
-
-    del tarefas_pendentes[user_id]
-
-    nome = update.effective_user.first_name
-
-    await update.message.reply_text(
-        f"✅ Tarefa da {periodo} confirmada!"
-    )
-
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=(
-            f"📌 {nome} concluiu "
-            f"a tarefa da {periodo}."
-        )
-    )
-
-    return True
-
-# =========================================
-# IA
-# =========================================
+# ==================================================
+# IA + RESPOSTAS
+# ==================================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -711,105 +440,122 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message:
             return
 
-        mensagem = update.message.text
+        texto = update.message.text
 
-        if not mensagem:
+        if not texto:
             return
 
         user_id = update.effective_user.id
 
         chat_id = update.effective_chat.id
 
-        # =================================
+        texto_lower = texto.lower()
+
+        # ==================================================
         # CONFIRMAR TAREFA
-        # =================================
+        # ==================================================
 
-        concluiu = await verificar_tarefa(
-            update,
-            context
-        )
+        palavras = [
+            "feito",
+            "concluido",
+            "concluído",
+            "ok"
+        ]
 
-        if concluiu:
-            return
+        if user_id in tarefas_pendentes:
 
-        # =================================
-        # IA NO GRUPO
-        # =================================
+            if any(p in texto_lower for p in palavras):
 
-        responder_ia = False
-
-        # PRIVADO
-
-        if update.effective_chat.type == "private":
-
-            responder_ia = True
-
-        # GRUPO
-
-        else:
-
-            if (
-                "ia" in mensagem.lower()
-                or "bot" in mensagem.lower()
-            ):
-
-                responder_ia = True
-
-        if not responder_ia:
-            return
-
-        # =================================
-        # ANTI FLOOD
-        # =================================
-
-        agora = time.time()
-
-        if user_id in ultimo_tempo:
-
-            diferenca = (
-                agora - ultimo_tempo[user_id]
-            )
-
-            if diferenca < 1.5:
+                del tarefas_pendentes[user_id]
 
                 await update.message.reply_text(
-                    "⏳ Aguarde..."
+                    "✅ Tarefa concluída confirmada."
                 )
+
+                # AVISA ADMIN
+
+                for admin in ADMIN_IDS:
+
+                    await context.bot.send_message(
+                        chat_id=admin,
+                        text=f"""
+📌 Tarefa concluída
+
+👤 Funcionário:
+{user_id}
+
+💬 Resposta:
+{texto}
+"""
+                    )
 
                 return
 
-        ultimo_tempo[user_id] = agora
+        # ==================================================
+        # IA NO GRUPO
+        # ==================================================
 
-        # =================================
-        # DIGITANDO
-        # =================================
+        ativar_ia = False
 
-        await context.bot.send_chat_action(
-            chat_id=chat_id,
-            action=ChatAction.TYPING
-        )
+        if chat_id == GRUPO_ID:
 
-        # =================================
+            if (
+                "ia" in texto_lower
+                or "bot" in texto_lower
+            ):
+                ativar_ia = True
+
+        else:
+
+            ativar_ia = True
+
+        if not ativar_ia:
+            return
+
+        # ==================================================
+        # PRIVADO
+        # ==================================================
+
+        if (
+            update.effective_chat.type == "private"
+            and not eh_admin(user_id)
+        ):
+
+            await update.message.reply_text(
+                "❌ Sem acesso."
+            )
+
+            return
+
+        # ==================================================
         # MEMÓRIA
-        # =================================
+        # ==================================================
 
         if user_id not in memoria:
+
             memoria[user_id] = []
 
         memoria[user_id].append(
-            f"Usuário: {mensagem}"
+            f"Usuário: {texto}"
         )
 
-        memoria[user_id] = (
-            memoria[user_id][-MAX_MSG:]
-        )
+        memoria[user_id] = memoria[user_id][-MAX_MEMORIA:]
 
         historico = "\n".join(
             memoria[user_id]
         )
 
         prompt = f"""
-{SYSTEM_PROMPT}
+Você é uma IA inteligente e natural.
+
+REGRAS:
+
+- Responda em português
+- Seja objetiva
+- Seja humana
+- Use emojis quando necessário
+- Não faça textos gigantes
+- Nunca corte frases
 
 CONVERSA:
 {historico}
@@ -820,28 +566,30 @@ IA:
         resposta = model.generate_content(
             prompt,
             generation_config={
-                "temperature": 0.9,
-                "max_output_tokens": 1200,
+                "temperature": 0.8,
+                "max_output_tokens": 1000,
             }
         )
 
-        texto = resposta.text.strip()
+        resposta_texto = resposta.text.strip()
 
         memoria[user_id].append(
-            f"IA: {texto}"
+            f"IA: {resposta_texto}"
         )
 
-        await asyncio.sleep(
-            random.uniform(1, 2)
-        )
+        # ==================================================
+        # DIVIDIR MENSAGEM
+        # ==================================================
 
         limite = 3500
 
         partes = [
-            texto[i:i + limite]
+
+            resposta_texto[i:i + limite]
+
             for i in range(
                 0,
-                len(texto),
+                len(resposta_texto),
                 limite
             )
         ]
@@ -860,9 +608,9 @@ IA:
             "❌ Erro temporário."
         )
 
-# =========================================
+# ==================================================
 # MAIN
-# =========================================
+# ==================================================
 
 async def main():
 
@@ -875,26 +623,54 @@ async def main():
     comandos = [
 
         BotCommand("start", "Iniciar"),
-        BotCommand("status", "Ver status"),
-        BotCommand("addfuncionario", "Adicionar funcionário"),
-        BotCommand("removerfuncionario", "Remover funcionário"),
-        BotCommand("listar", "Listar funcionários"),
-        BotCommand("horario", "Definir horário"),
-        BotCommand("tarefa", "Definir tarefa"),
-        BotCommand("ligar", "Ativar"),
-        BotCommand("desligar", "Desativar"),
+
+        BotCommand(
+            "addfuncionario",
+            "Adicionar funcionário"
+        ),
+
+        BotCommand(
+            "removerfuncionario",
+            "Remover funcionário"
+        ),
+
+        BotCommand(
+            "listar",
+            "Listar funcionários"
+        ),
+
+        BotCommand(
+            "manha",
+            "Mensagem manhã"
+        ),
+
+        BotCommand(
+            "tarde",
+            "Mensagem tarde"
+        ),
+
+        BotCommand(
+            "horario_manha",
+            "Horário manhã"
+        ),
+
+        BotCommand(
+            "horario_tarde",
+            "Horário tarde"
+        ),
     ]
 
     await app.bot.set_my_commands(
         comandos
     )
 
-    app.add_handler(
-        CommandHandler("start", start)
-    )
+    # COMANDOS
 
     app.add_handler(
-        CommandHandler("status", status)
+        CommandHandler(
+            "start",
+            start
+        )
     )
 
     app.add_handler(
@@ -920,48 +696,55 @@ async def main():
 
     app.add_handler(
         CommandHandler(
-            "horario",
-            horario
+            "manha",
+            manha
         )
     )
 
     app.add_handler(
         CommandHandler(
-            "tarefa",
-            tarefa
+            "tarde",
+            tarde
         )
     )
 
     app.add_handler(
         CommandHandler(
-            "ligar",
-            ligar
+            "horario_manha",
+            horario_m
         )
     )
 
     app.add_handler(
         CommandHandler(
-            "desligar",
-            desligar
+            "horario_tarde",
+            horario_t
         )
     )
 
+    # IA
+
     app.add_handler(
+
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             responder
         )
     )
 
+    # ==================================================
+    # SCHEDULER
+    # ==================================================
+
     scheduler = AsyncIOScheduler(
         timezone=TIMEZONE
     )
 
     scheduler.add_job(
-        enviar_aviso,
+        enviar_tarefas,
         "interval",
         seconds=30,
-        kwargs={"app": app}
+        args=[app]
     )
 
     scheduler.start()
@@ -978,9 +761,9 @@ async def main():
 
         await asyncio.sleep(3600)
 
-# =========================================
+# ==================================================
 # START
-# =========================================
+# ==================================================
 
 if __name__ == "__main__":
 
