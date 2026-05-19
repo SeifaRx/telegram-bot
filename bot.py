@@ -27,7 +27,7 @@ TOKEN = os.getenv("TOKEN")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# IDs DOS ADMINS
+# ADMINS
 ADMIN_IDS = [5651378630]
 
 # ID DO GRUPO
@@ -121,7 +121,7 @@ async def bloquear_grupo(update):
     if update.effective_chat.id == GRUPO_ID:
 
         await update.message.reply_text(
-            "❌ Use comandos apenas no privado."
+            "❌ Use comandos apenas no privado do bot."
         )
 
         return True
@@ -321,11 +321,19 @@ async def horario_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    horario_manha = context.args[0]
+    try:
 
-    await update.message.reply_text(
-        f"✅ Horário manhã salvo: {horario_manha}"
-    )
+        horario_manha = context.args[0]
+
+        await update.message.reply_text(
+            f"✅ Horário manhã salvo: {horario_manha}"
+        )
+
+    except:
+
+        await update.message.reply_text(
+            "Use:\n/horario_manha 08:00"
+        )
 
 # ==================================================
 # HORÁRIO TARDE
@@ -341,11 +349,19 @@ async def horario_t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    horario_tarde = context.args[0]
+    try:
 
-    await update.message.reply_text(
-        f"✅ Horário tarde salvo: {horario_tarde}"
-    )
+        horario_tarde = context.args[0]
+
+        await update.message.reply_text(
+            f"✅ Horário tarde salvo: {horario_tarde}"
+        )
+
+    except:
+
+        await update.message.reply_text(
+            "Use:\n/horario_tarde 15:00"
+        )
 
 # ==================================================
 # ENVIAR TAREFAS
@@ -420,9 +436,9 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
     texto += """
 
 ✅ Responda:
+- ok
 - feito
 - concluído
-- ok
 """
 
     try:
@@ -433,9 +449,7 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-        logging.info(
-            "Tarefas enviadas."
-        )
+        logging.info("Tarefas enviadas.")
 
     except Exception as e:
 
@@ -463,7 +477,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         chat_id = update.effective_chat.id
 
-        texto_lower = texto.lower()
+        texto_lower = texto.lower().strip()
 
         # ==================================================
         # CONFIRMAÇÃO TAREFA
@@ -494,10 +508,29 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 return
 
-            if any(
-                palavra in texto_lower
-                for palavra in palavras_confirmacao
-            ):
+            # ==================================================
+            # VERIFICA CONFIRMAÇÃO
+            # ==================================================
+
+            confirmado = False
+
+            for palavra in palavras_confirmacao:
+
+                if texto_lower == palavra:
+
+                    confirmado = True
+                    break
+
+                if texto_lower.startswith(palavra):
+
+                    confirmado = True
+                    break
+
+            # ==================================================
+            # CONCLUI TAREFA
+            # ==================================================
+
+            if confirmado:
 
                 del tarefas_pendentes[user_id]
 
@@ -518,16 +551,24 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else str(user_id)
                 )
 
-                await update.message.reply_text(
-                    f"""
-✅ Tarefa concluída!
+                mensagem_conclusao = f"""
+✅ TAREFA CONCLUÍDA
 
-👏 Bom trabalho, {nome}
+👏 Bom trabalho, {nome}!
 
-📋 {dados['periodo']}
+📌 Período:
+{dados['periodo']}
 
-📝 {dados['tarefa']}
+📝 Tarefa:
+{dados['tarefa']}
+
+🕒 Confirmado às:
+{datetime.now(TIMEZONE).strftime('%H:%M:%S')}
 """
+
+                await context.bot.send_message(
+                    chat_id=GRUPO_ID,
+                    text=mensagem_conclusao
                 )
 
                 # AVISA ADM
@@ -727,10 +768,7 @@ async def main():
     )
 
     app.add_handler(
-        CommandHandler(
-            "start",
-            start
-        )
+        CommandHandler("start", start)
     )
 
     app.add_handler(
