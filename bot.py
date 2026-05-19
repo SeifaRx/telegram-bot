@@ -27,7 +27,7 @@ TOKEN = os.getenv("TOKEN")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ADMINS
+# IDs DOS ADMINS
 ADMIN_IDS = [5651378630]
 
 # ID DO GRUPO
@@ -121,7 +121,7 @@ async def bloquear_grupo(update):
     if update.effective_chat.id == GRUPO_ID:
 
         await update.message.reply_text(
-            "❌ Use comandos apenas no privado do bot."
+            "❌ Use comandos apenas no privado."
         )
 
         return True
@@ -321,19 +321,11 @@ async def horario_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    try:
+    horario_manha = context.args[0]
 
-        horario_manha = context.args[0]
-
-        await update.message.reply_text(
-            f"✅ Horário manhã salvo: {horario_manha}"
-        )
-
-    except:
-
-        await update.message.reply_text(
-            "Use:\n/horario_manha 08:00"
-        )
+    await update.message.reply_text(
+        f"✅ Horário manhã salvo: {horario_manha}"
+    )
 
 # ==================================================
 # HORÁRIO TARDE
@@ -349,19 +341,11 @@ async def horario_t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    try:
+    horario_tarde = context.args[0]
 
-        horario_tarde = context.args[0]
-
-        await update.message.reply_text(
-            f"✅ Horário tarde salvo: {horario_tarde}"
-        )
-
-    except:
-
-        await update.message.reply_text(
-            "Use:\n/horario_tarde 15:00"
-        )
+    await update.message.reply_text(
+        f"✅ Horário tarde salvo: {horario_tarde}"
+    )
 
 # ==================================================
 # ENVIAR TAREFAS
@@ -409,14 +393,6 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
     if not funcionarios:
         return
 
-    texto = f"""
-📋 {periodo}
-
-📝 TAREFA:
-{tarefa}
-
-"""
-
     for funcionario in funcionarios:
 
         user_id = funcionario[0]
@@ -429,36 +405,35 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
             "data": datetime.now(TIMEZONE).strftime("%Y-%m-%d")
         }
 
-        texto += (
-            f'👤 <a href="tg://user?id={user_id}">{nome}</a>\n'
-        )
+        texto = f"""
+📋 {periodo}
 
-    texto += """
+👤 <a href="tg://user?id={user_id}">{nome}</a>
+
+📝 TAREFA:
+{tarefa}
 
 ✅ Responda:
-- ok
 - feito
 - concluído
+- ok
+- pronto
 """
 
-    try:
+        try:
 
-        await context.bot.send_message(
-            chat_id=GRUPO_ID,
-            text=texto,
-            parse_mode="HTML"
-        )
+            await context.bot.send_message(
+                chat_id=GRUPO_ID,
+                text=texto,
+                parse_mode="HTML"
+            )
 
-        logging.info("Tarefas enviadas.")
+        except Exception as e:
 
-    except Exception as e:
-
-        logging.error(
-            f"Erro ao enviar tarefa: {e}"
-        )
+            logging.error(e)
 
 # ==================================================
-# IA + RESPOSTAS
+# IA + RESPOSTAS + CONFIRMAÇÃO
 # ==================================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -480,7 +455,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto_lower = texto.lower().strip()
 
         # ==================================================
-        # CONFIRMAÇÃO TAREFA
+        # CONFIRMAÇÃO DE TAREFA
         # ==================================================
 
         palavras_confirmacao = [
@@ -489,9 +464,20 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "concluido",
             "concluído",
             "ok",
+            "okay",
+            "okk",
+            "blz",
+            "beleza",
+            "pronto",
             "finalizado",
+            "finalizei",
             "terminei",
-            "pronto"
+            "ja fiz",
+            "já fiz",
+            "foi feito",
+            "completei",
+            "conclui",
+            "done",
         ]
 
         if user_id in tarefas_pendentes:
@@ -508,29 +494,16 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 return
 
-            # ==================================================
-            # VERIFICA CONFIRMAÇÃO
-            # ==================================================
-
-            confirmado = False
+            confirmou = False
 
             for palavra in palavras_confirmacao:
 
-                if texto_lower == palavra:
+                if palavra in texto_lower:
 
-                    confirmado = True
+                    confirmou = True
                     break
 
-                if texto_lower.startswith(palavra):
-
-                    confirmado = True
-                    break
-
-            # ==================================================
-            # CONCLUI TAREFA
-            # ==================================================
-
-            if confirmado:
+            if confirmou:
 
                 del tarefas_pendentes[user_id]
 
@@ -551,27 +524,19 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else str(user_id)
                 )
 
-                mensagem_conclusao = f"""
+                await update.message.reply_text(
+                    f"""
 ✅ TAREFA CONCLUÍDA
 
 👏 Bom trabalho, {nome}!
 
-📌 Período:
-{dados['periodo']}
+📋 {dados['periodo']}
 
-📝 Tarefa:
-{dados['tarefa']}
+📝 {dados['tarefa']}
 
-🕒 Confirmado às:
-{datetime.now(TIMEZONE).strftime('%H:%M:%S')}
+🚀 Tarefa confirmada com sucesso.
 """
-
-                await context.bot.send_message(
-                    chat_id=GRUPO_ID,
-                    text=mensagem_conclusao
                 )
-
-                # AVISA ADM
 
                 for admin in ADMIN_IDS:
 
@@ -602,7 +567,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         # ==================================================
-        # IA NO GRUPO SOMENTE CHAMANDO
+        # IA SOMENTE QUANDO CHAMADA
         # ==================================================
 
         ativar_ia = False
@@ -613,6 +578,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "ia" in texto_lower
                 or "bot" in texto_lower
             ):
+
                 ativar_ia = True
 
         else:
@@ -767,58 +733,14 @@ async def main():
         comandos
     )
 
-    app.add_handler(
-        CommandHandler("start", start)
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "addfuncionario",
-            addfuncionario
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "removerfuncionario",
-            removerfuncionario
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "listar",
-            listar
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "manha",
-            manha
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "tarde",
-            tarde
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "horario_manha",
-            horario_m
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "horario_tarde",
-            horario_t
-        )
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addfuncionario", addfuncionario))
+    app.add_handler(CommandHandler("removerfuncionario", removerfuncionario))
+    app.add_handler(CommandHandler("listar", listar))
+    app.add_handler(CommandHandler("manha", manha))
+    app.add_handler(CommandHandler("tarde", tarde))
+    app.add_handler(CommandHandler("horario_manha", horario_m))
+    app.add_handler(CommandHandler("horario_tarde", horario_t))
 
     app.add_handler(
         MessageHandler(
@@ -826,10 +748,6 @@ async def main():
             responder
         )
     )
-
-    # ==================================================
-    # AGENDADOR
-    # ==================================================
 
     scheduler = AsyncIOScheduler(
         timezone=TIMEZONE
