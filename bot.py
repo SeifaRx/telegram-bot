@@ -36,6 +36,7 @@ logging.basicConfig(
 # =========================================
 
 TOKEN = os.getenv("TOKEN")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # SEU ID
@@ -50,7 +51,9 @@ TIMEZONE = ZoneInfo("America/Sao_Paulo")
 # GEMINI
 # =========================================
 
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(
+    api_key=GEMINI_API_KEY
+)
 
 model = genai.GenerativeModel(
     "gemini-2.5-flash"
@@ -88,10 +91,12 @@ conn.commit()
 # =========================================
 
 memoria = {}
+
 MAX_MSG = 12
 
-usuarios_aguardando = {}
 ultimo_tempo = {}
+
+tarefas_pendentes = {}
 
 # =========================================
 # PROMPT IA
@@ -102,15 +107,14 @@ Você é uma IA extremamente inteligente.
 
 REGRAS:
 
-- Responda sempre em português
+- Responda em português
 - Seja humana
 - Seja moderna
 - Seja útil
-- Seja rápida
+- Seja natural
+- Nunca corte frases
 - Não faça textos gigantes
 - Use emojis quando fizer sentido
-- Nunca corte frases
-- Responda de forma natural
 - Seja parecida com ChatGPT
 """
 
@@ -119,6 +123,7 @@ REGRAS:
 # =========================================
 
 def eh_admin(user_id):
+
     return user_id == ADMIN_ID
 
 def salvar_config(chave, valor):
@@ -157,7 +162,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = """
 🤖 BOT ONLINE
 
-COMANDOS:
+📌 COMANDOS
 
 /addfuncionario ID Nome
 
@@ -169,7 +174,9 @@ COMANDOS:
 
 /horario tarde 15:00
 
-/mensagem sua mensagem
+/tarefa manha Fazer relatório
+
+/tarefa tarde Atualizar sistema
 
 /ligar
 
@@ -189,12 +196,26 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    horario_manha = pegar_config("horario_manha", "Não definido")
-    horario_tarde = pegar_config("horario_tarde", "Não definido")
+    horario_manha = pegar_config(
+        "horario_manha",
+        "Não definido"
+    )
 
-    ativo = pegar_config("ativo", "0")
+    horario_tarde = pegar_config(
+        "horario_tarde",
+        "Não definido"
+    )
 
-    sistema = "🟢 Ligado" if ativo == "1" else "🔴 Desligado"
+    ativo = pegar_config(
+        "ativo",
+        "0"
+    )
+
+    sistema = (
+        "🟢 Ligado"
+        if ativo == "1"
+        else "🔴 Desligado"
+    )
 
     texto = f"""
 📊 STATUS
@@ -283,7 +304,9 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         return
 
-    cursor.execute("SELECT * FROM funcionarios")
+    cursor.execute(
+        "SELECT * FROM funcionarios"
+    )
 
     funcionarios = cursor.fetchall()
 
@@ -299,7 +322,10 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for f in funcionarios:
 
-        texto += f"👤 {f[1]}\n🆔 {f[0]}\n\n"
+        texto += (
+            f"👤 {f[1]}\n"
+            f"🆔 {f[0]}\n\n"
+        )
 
     await update.message.reply_text(texto)
 
@@ -315,6 +341,7 @@ async def horario(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
 
         periodo = context.args[0]
+
         hora = context.args[1]
 
         salvar_config(
@@ -339,27 +366,40 @@ Use:
         )
 
 # =========================================
-# MENSAGEM
+# TAREFA
 # =========================================
 
-async def mensagem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tarefa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not eh_admin(update.effective_user.id):
         return
 
-    texto = update.message.text.replace(
-        "/mensagem",
-        ""
-    ).strip()
+    try:
 
-    salvar_config(
-        "mensagem",
-        texto
-    )
+        periodo = context.args[0].lower()
 
-    await update.message.reply_text(
-        "✅ Mensagem salva"
-    )
+        texto = " ".join(context.args[1:])
+
+        salvar_config(
+            f"tarefa_{periodo}",
+            texto
+        )
+
+        await update.message.reply_text(
+            f"✅ Tarefa da {periodo} salva!"
+        )
+
+    except:
+
+        await update.message.reply_text(
+            """
+Use:
+
+/tarefa manha Fazer relatório
+
+/tarefa tarde Atualizar sistema
+"""
+        )
 
 # =========================================
 # LIGAR
@@ -392,7 +432,7 @@ async def desligar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================================
-# ENVIAR AVISO
+# ENVIAR TAREFAS
 # =========================================
 
 ultimo_envio = None
@@ -401,7 +441,10 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
 
     global ultimo_envio
 
-    ativo = pegar_config("ativo", "0")
+    ativo = pegar_config(
+        "ativo",
+        "0"
+    )
 
     if ativo != "1":
         return
@@ -410,58 +453,153 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
 
     horario_atual = agora.strftime("%H:%M")
 
-    horario_manha = pegar_config("horario_manha")
-    horario_tarde = pegar_config("horario_tarde")
+    horario_manha = pegar_config(
+        "horario_manha"
+    )
+
+    horario_tarde = pegar_config(
+        "horario_tarde"
+    )
 
     periodo = None
+    tarefa_texto = None
+    saudacao = None
+
+    # =====================================
+    # MANHÃ
+    # =====================================
 
     if horario_atual == horario_manha:
-        periodo = "☀️ Bom dia"
+
+        periodo = "manha"
+
+        saudacao = "☀️ Bom dia"
+
+        tarefa_texto = pegar_config(
+            "tarefa_manha",
+            "Responder tarefa"
+        )
+
+    # =====================================
+    # TARDE
+    # =====================================
 
     elif horario_atual == horario_tarde:
-        periodo = "🌤 Boa tarde"
+
+        periodo = "tarde"
+
+        saudacao = "🌤 Boa tarde"
+
+        tarefa_texto = pegar_config(
+            "tarefa_tarde",
+            "Responder tarefa"
+        )
 
     else:
         return
 
-    controle = f"{agora.strftime('%Y-%m-%d')} {horario_atual}"
+    controle = (
+        f"{agora.strftime('%Y-%m-%d')} "
+        f"{horario_atual}"
+    )
 
     if ultimo_envio == controle:
         return
 
     ultimo_envio = controle
 
-    texto_msg = pegar_config(
-        "mensagem",
-        "Respondam quando concluírem 🚀"
+    cursor.execute(
+        "SELECT * FROM funcionarios"
     )
-
-    cursor.execute("SELECT * FROM funcionarios")
 
     funcionarios = cursor.fetchall()
 
     if not funcionarios:
         return
 
-    usuarios_aguardando.clear()
+    tarefas_pendentes.clear()
 
     marcacoes = ""
 
     for funcionario in funcionarios:
 
         user_id = funcionario[0]
+
         nome = funcionario[1]
 
-        usuarios_aguardando[user_id] = True
+        tarefas_pendentes[user_id] = periodo
 
         marcacoes += (
-            f'<a href="tg://user?id={user_id}">{nome}</a>\n'
+            f'<a href="tg://user?id={user_id}">'
+            f'{nome}</a>\n'
         )
 
     texto = f"""
-📢 {periodo}
+📢 {saudacao}
 
-{texto_msg}
+📌 TAREFA DA {periodo.upper()}:
+
+{tarefa_texto}
+
+✅ Respondam:
+- feito
+- concluído
+- ok
+- terminei
+
+{marcacoes}
+"""
+
+    await context.bot.send_message(
+        chat_id=GRUPO_ID,
+        text=texto,
+        parse_mode="HTML"
+    )
+
+    asyncio.create_task(
+        cobrar_ausentes(context, periodo)
+    )
+
+# =========================================
+# COBRAR AUSENTES
+# =========================================
+
+async def cobrar_ausentes(context, periodo):
+
+    await asyncio.sleep(600)
+
+    if not tarefas_pendentes:
+        return
+
+    marcacoes = ""
+
+    for user_id in tarefas_pendentes:
+
+        cursor.execute(
+            """
+            SELECT nome
+            FROM funcionarios
+            WHERE user_id=?
+            """,
+            (user_id,)
+        )
+
+        resultado = cursor.fetchone()
+
+        if resultado:
+
+            nome = resultado[0]
+
+            marcacoes += (
+                f'<a href="tg://user?id={user_id}">'
+                f'{nome}</a>\n'
+            )
+
+    if not marcacoes:
+        return
+
+    texto = f"""
+⚠️ Funcionários sem resposta da tarefa da {periodo}:
 
 {marcacoes}
 """
@@ -473,7 +611,64 @@ async def enviar_aviso(context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================================
-# IA + FUNCIONÁRIOS
+# CONFIRMAR TAREFA
+# =========================================
+
+async def verificar_tarefa(update, context):
+
+    user_id = update.effective_user.id
+
+    if user_id not in tarefas_pendentes:
+        return False
+
+    texto = update.message.text.lower()
+
+    respostas_ok = [
+
+        "feito",
+        "concluido",
+        "concluído",
+        "ok",
+        "terminei",
+        "pronto",
+        "finalizado",
+        "finalizei",
+    ]
+
+    confirmou = any(
+        palavra in texto
+        for palavra in respostas_ok
+    )
+
+    if not confirmou:
+        return False
+
+    periodo = tarefas_pendentes[user_id]
+
+    del tarefas_pendentes[user_id]
+
+    nome = update.effective_user.first_name
+
+    # RESPONDE NO GRUPO
+
+    await update.message.reply_text(
+        f"✅ Tarefa da {periodo} confirmada!"
+    )
+
+    # AVISA ADMIN
+
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=(
+            f"📌 {nome} concluiu "
+            f"a tarefa da {periodo}."
+        )
+    )
+
+    return True
+
+# =========================================
+# IA
 # =========================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -489,27 +684,19 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         user_id = update.effective_user.id
+
         chat_id = update.effective_chat.id
 
         # =================================
-        # FUNCIONÁRIO RESPONDEU
+        # CONFIRMA TAREFA
         # =================================
 
-        if user_id in usuarios_aguardando:
+        concluiu = await verificar_tarefa(
+            update,
+            context
+        )
 
-            del usuarios_aguardando[user_id]
-
-            await update.message.reply_text(
-                "✅ Tarefa confirmada!"
-            )
-
-            nome = update.effective_user.first_name
-
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"📌 {nome} confirmou a tarefa."
-            )
-
+        if concluiu:
             return
 
         # =================================
@@ -519,17 +706,20 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         responder_ia = False
 
         # PRIVADO
+
         if update.effective_chat.type == "private":
 
             responder_ia = True
 
         # GRUPO
+
         else:
 
             if (
                 "ia" in mensagem.lower()
                 or "bot" in mensagem.lower()
             ):
+
                 responder_ia = True
 
         if not responder_ia:
@@ -543,7 +733,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user_id in ultimo_tempo:
 
-            diferenca = agora - ultimo_tempo[user_id]
+            diferenca = (
+                agora - ultimo_tempo[user_id]
+            )
 
             if diferenca < 1.5:
 
@@ -575,7 +767,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Usuário: {mensagem}"
         )
 
-        memoria[user_id] = memoria[user_id][-MAX_MSG:]
+        memoria[user_id] = (
+            memoria[user_id][-MAX_MSG:]
+        )
 
         historico = "\n".join(
             memoria[user_id]
@@ -612,12 +806,18 @@ IA:
 
         partes = [
             texto[i:i + limite]
-            for i in range(0, len(texto), limite)
+            for i in range(
+                0,
+                len(texto),
+                limite
+            )
         ]
 
         for parte in partes:
 
-            await update.message.reply_text(parte)
+            await update.message.reply_text(
+                parte
+            )
 
     except Exception as e:
 
@@ -647,22 +847,71 @@ async def main():
         BotCommand("removerfuncionario", "Remover funcionário"),
         BotCommand("listar", "Listar funcionários"),
         BotCommand("horario", "Definir horário"),
-        BotCommand("mensagem", "Definir mensagem"),
+        BotCommand("tarefa", "Definir tarefa"),
         BotCommand("ligar", "Ativar"),
         BotCommand("desligar", "Desativar"),
     ]
 
-    await app.bot.set_my_commands(comandos)
+    await app.bot.set_my_commands(
+        comandos
+    )
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("addfuncionario", addfuncionario))
-    app.add_handler(CommandHandler("removerfuncionario", removerfuncionario))
-    app.add_handler(CommandHandler("listar", listar))
-    app.add_handler(CommandHandler("horario", horario))
-    app.add_handler(CommandHandler("mensagem", mensagem))
-    app.add_handler(CommandHandler("ligar", ligar))
-    app.add_handler(CommandHandler("desligar", desligar))
+    app.add_handler(
+        CommandHandler("start", start)
+    )
+
+    app.add_handler(
+        CommandHandler("status", status)
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "addfuncionario",
+            addfuncionario
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "removerfuncionario",
+            removerfuncionario
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "listar",
+            listar
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "horario",
+            horario
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "tarefa",
+            tarefa
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "ligar",
+            ligar
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "desligar",
+            desligar
+        )
+    )
 
     app.add_handler(
         MessageHandler(
