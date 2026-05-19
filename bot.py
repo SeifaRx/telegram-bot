@@ -43,8 +43,8 @@ logging.basicConfig(
 TOKEN = os.getenv("TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-ADMIN_ID = 123456789
-GRUPO_ID = -1001234567890
+ADMIN_ID = 5651378630
+GRUPO_ID = -1002913144849
 
 TIMEZONE = ZoneInfo("America/Sao_Paulo")
 
