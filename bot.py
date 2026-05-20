@@ -1,3 +1,7 @@
+# ==================================================
+# IMPORTS
+# ==================================================
+
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
@@ -7,6 +11,8 @@ from telegram.ext import (
     filters,
 )
 
+from telegram.constants import ChatAction
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import google.generativeai as genai
@@ -15,6 +21,8 @@ import os
 import asyncio
 import sqlite3
 import logging
+import random
+import time
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -24,13 +32,10 @@ from zoneinfo import ZoneInfo
 # ==================================================
 
 TOKEN = os.getenv("TOKEN")
-
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# IDs DOS ADMINS
 ADMIN_IDS = [5651378630]
 
-# ID DO GRUPO
 GRUPO_ID = -1002913144849
 
 TIMEZONE = ZoneInfo("America/Sao_Paulo")
@@ -44,7 +49,54 @@ genai.configure(
 )
 
 model = genai.GenerativeModel(
-    "gemini-2.5-flash"
+
+    model_name="gemini-2.5-flash",
+
+    system_instruction="""
+Você é uma inteligência artificial extremamente inteligente,
+natural e moderna.
+
+Seu comportamento deve ser parecido com ChatGPT premium.
+
+REGRAS IMPORTANTES:
+
+- Responda sempre em português brasileiro
+- Nunca responda em inglês
+- Seja extremamente inteligente
+- Entenda contexto
+- Seja humana
+- Seja natural
+- Evite respostas robóticas
+- Responda curto quando possível
+- Explique detalhadamente quando necessário
+- Nunca faça textões desnecessários
+- Organize respostas
+- Use listas quando necessário
+- Use emojis apenas quando fizer sentido
+- Nunca corte frases
+- Nunca deixe respostas incompletas
+- Seja útil
+- Seja persuasiva quando necessário
+- Seja criativa
+- Seja rápida
+- Seja parecida com ChatGPT
+- Sempre adapte o tamanho da resposta ao contexto
+- Se a pergunta for simples, responda curto
+- Se a pergunta exigir detalhes, explique melhor
+
+FORMATAÇÃO:
+
+- Organize respostas
+- Use espaços entre tópicos
+- Evite blocos gigantes
+- Use:
+
+1.
+2.
+3.
+
+quando fizer sentido.
+"""
 )
 
 # ==================================================
@@ -77,12 +129,12 @@ CREATE TABLE IF NOT EXISTS funcionarios(
 conn.commit()
 
 # ==================================================
-# MEMÓRIA IA
+# MEMÓRIA
 # ==================================================
 
 memoria = {}
 
-MAX_MEMORIA = 10
+MAX_MEMORIA = 20
 
 # ==================================================
 # CONFIGURAÇÕES
@@ -104,6 +156,8 @@ tarefas_pendentes = {}
 
 ultimo_envio = ""
 
+ultimo_uso = {}
+
 # ==================================================
 # FUNÇÕES
 # ==================================================
@@ -113,7 +167,7 @@ def eh_admin(user_id):
     return user_id in ADMIN_IDS
 
 # ==================================================
-# BLOQUEAR COMANDOS NO GRUPO
+# BLOQUEAR GRUPO
 # ==================================================
 
 async def bloquear_grupo(update):
@@ -121,7 +175,7 @@ async def bloquear_grupo(update):
     if update.effective_chat.id == GRUPO_ID:
 
         await update.message.reply_text(
-            "❌ Use comandos apenas no privado."
+            "❌ Use comandos no privado."
         )
 
         return True
@@ -151,9 +205,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 /listar
 
-/manha tarefa da manhã
+/manha tarefa
 
-/tarde tarefa da tarde
+/tarde tarefa
 
 /horario_manha 08:00
 
@@ -191,7 +245,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
 
         await update.message.reply_text(
-            f"✅ Funcionário {nome} adicionado."
+            f"✅ {nome} adicionado."
         )
 
     except:
@@ -201,7 +255,7 @@ async def addfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ==================================================
-# REMOVER FUNCIONÁRIO
+# REMOVER
 # ==================================================
 
 async def removerfuncionario(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -268,7 +322,7 @@ async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texto)
 
 # ==================================================
-# CONFIG MANHÃ
+# MANHÃ
 # ==================================================
 
 async def manha(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,11 +338,11 @@ async def manha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_manha = " ".join(context.args)
 
     await update.message.reply_text(
-        "✅ Tarefa da manhã salva."
+        "✅ Mensagem da manhã salva."
     )
 
 # ==================================================
-# CONFIG TARDE
+# TARDE
 # ==================================================
 
 async def tarde(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,7 +358,7 @@ async def tarde(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_tarde = " ".join(context.args)
 
     await update.message.reply_text(
-        "✅ Tarefa da tarde salva."
+        "✅ Mensagem da tarde salva."
     )
 
 # ==================================================
@@ -324,7 +378,7 @@ async def horario_m(update: Update, context: ContextTypes.DEFAULT_TYPE):
     horario_manha = context.args[0]
 
     await update.message.reply_text(
-        f"✅ Horário manhã salvo: {horario_manha}"
+        f"✅ Horário manhã: {horario_manha}"
     )
 
 # ==================================================
@@ -344,7 +398,7 @@ async def horario_t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     horario_tarde = context.args[0]
 
     await update.message.reply_text(
-        f"✅ Horário tarde salvo: {horario_tarde}"
+        f"✅ Horário tarde: {horario_tarde}"
     )
 
 # ==================================================
@@ -400,9 +454,10 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
         nome = funcionario[1]
 
         tarefas_pendentes[user_id] = {
+
             "periodo": periodo,
             "tarefa": tarefa,
-            "data": datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+            "data": agora.strftime("%Y-%m-%d")
         }
 
         texto = f"""
@@ -415,8 +470,8 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
 
 ✅ Responda:
 - feito
-- concluído
 - ok
+- concluído
 - pronto
 """
 
@@ -433,7 +488,7 @@ async def enviar_tarefas(context: ContextTypes.DEFAULT_TYPE):
             logging.error(e)
 
 # ==================================================
-# IA + RESPOSTAS + CONFIRMAÇÃO
+# IA
 # ==================================================
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,44 +510,35 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto_lower = texto.lower().strip()
 
         # ==================================================
-        # CONFIRMAÇÃO DE TAREFA
+        # ANTI FLOOD
+        # ==================================================
+
+        agora = time.time()
+
+        if user_id in ultimo_uso:
+
+            if agora - ultimo_uso[user_id] < 2:
+
+                return
+
+        ultimo_uso[user_id] = agora
+
+        # ==================================================
+        # CONFIRMAÇÃO
         # ==================================================
 
         palavras_confirmacao = [
 
             "feito",
-            "concluido",
-            "concluído",
             "ok",
-            "okay",
-            "okk",
-            "blz",
-            "beleza",
             "pronto",
-            "finalizado",
-            "finalizei",
+            "concluído",
+            "concluido",
             "terminei",
-            "ja fiz",
-            "já fiz",
-            "foi feito",
-            "completei",
-            "conclui",
-            "done",
+            "finalizei",
         ]
 
         if user_id in tarefas_pendentes:
-
-            dados = tarefas_pendentes[user_id]
-
-            data_hoje = datetime.now(
-                TIMEZONE
-            ).strftime("%Y-%m-%d")
-
-            if dados["data"] != data_hoje:
-
-                del tarefas_pendentes[user_id]
-
-                return
 
             confirmou = False
 
@@ -507,67 +553,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 del tarefas_pendentes[user_id]
 
-                cursor.execute(
-                    """
-                    SELECT nome
-                    FROM funcionarios
-                    WHERE user_id=?
-                    """,
-                    (user_id,)
-                )
-
-                resultado = cursor.fetchone()
-
-                nome = (
-                    resultado[0]
-                    if resultado
-                    else str(user_id)
-                )
-
                 await update.message.reply_text(
-                    f"""
-✅ TAREFA CONCLUÍDA
-
-👏 Bom trabalho, {nome}!
-
-📋 {dados['periodo']}
-
-📝 {dados['tarefa']}
-
-🚀 Tarefa confirmada com sucesso.
-"""
+                    "✅ Tarefa confirmada."
                 )
-
-                for admin in ADMIN_IDS:
-
-                    try:
-
-                        await context.bot.send_message(
-                            chat_id=admin,
-                            text=f"""
-📌 FUNCIONÁRIO FINALIZOU
-
-👤 {nome}
-
-📝 Resposta:
-{texto}
-
-📋 Tarefa:
-{dados['tarefa']}
-
-🕒 Horário:
-{datetime.now(TIMEZONE).strftime('%H:%M:%S')}
-"""
-                        )
-
-                    except Exception as e:
-
-                        logging.error(e)
 
                 return
 
         # ==================================================
-        # IA SOMENTE QUANDO CHAMADA
+        # IA NO GRUPO
         # ==================================================
 
         ativar_ia = False
@@ -575,8 +568,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat_id == GRUPO_ID:
 
             if (
-                "ia" in texto_lower
-                or "bot" in texto_lower
+                update.message.reply_to_message
             ):
 
                 ativar_ia = True
@@ -589,7 +581,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ==================================================
-        # PRIVADO SOMENTE ADMIN
+        # PRIVADO
         # ==================================================
 
         if (
@@ -600,7 +592,16 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ==================================================
-        # MEMÓRIA IA
+        # DIGITANDO
+        # ==================================================
+
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
+
+        # ==================================================
+        # MEMÓRIA
         # ==================================================
 
         if user_id not in memoria:
@@ -613,42 +614,91 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         memoria[user_id] = memoria[user_id][-MAX_MEMORIA:]
 
-        historico = "\n".join(
-            memoria[user_id]
-        )
+        contexto = """
 
-        prompt = f"""
-Você é uma IA extremamente inteligente.
-
-REGRAS:
-
-- Responda em português
-- Seja natural
-- Seja moderna
-- Use emojis quando necessário
-- Seja organizada
-- Não faça textos gigantes
-- Nunca corte respostas
-
-CONVERSA:
-{historico}
-
-IA:
+Resumo da conversa:
 """
 
+        for item in memoria[user_id][-8:]:
+
+            contexto += f"\n{item}"
+
+        prompt = f"""
+{contexto}
+
+Mensagem atual:
+{texto}
+
+Responda da melhor forma possível.
+"""
+
+        # ==================================================
+        # GEMINI
+        # ==================================================
+
         resposta = model.generate_content(
+
             prompt,
+
             generation_config={
-                "temperature": 0.8,
-                "max_output_tokens": 1000,
+
+                "temperature": 0.9,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 2000,
             }
         )
 
-        resposta_texto = resposta.text.strip()
+        if not resposta.candidates:
+
+            await update.message.reply_text(
+                "❌ Não consegui responder."
+            )
+
+            return
+
+        partes_resposta = []
+
+        for candidate in resposta.candidates:
+
+            if candidate.content.parts:
+
+                for part in candidate.content.parts:
+
+                    if hasattr(part, "text"):
+
+                        partes_resposta.append(
+                            part.text
+                        )
+
+        resposta_texto = "\n".join(
+            partes_resposta
+        ).strip()
+
+        if not resposta_texto:
+
+            resposta_texto = (
+                "❌ Resposta vazia."
+            )
 
         memoria[user_id].append(
             f"IA: {resposta_texto}"
         )
+
+        # ==================================================
+        # DELAY HUMANO
+        # ==================================================
+
+        await asyncio.sleep(
+            min(
+                len(resposta_texto) / 120,
+                4
+            )
+        )
+
+        # ==================================================
+        # DIVIDIR
+        # ==================================================
 
         limite = 3500
 
@@ -710,22 +760,22 @@ async def main():
 
         BotCommand(
             "manha",
-            "Definir tarefa manhã"
+            "Mensagem manhã"
         ),
 
         BotCommand(
             "tarde",
-            "Definir tarefa tarde"
+            "Mensagem tarde"
         ),
 
         BotCommand(
             "horario_manha",
-            "Definir horário manhã"
+            "Horário manhã"
         ),
 
         BotCommand(
             "horario_tarde",
-            "Definir horário tarde"
+            "Horário tarde"
         ),
     ]
 
@@ -743,6 +793,7 @@ async def main():
     app.add_handler(CommandHandler("horario_tarde", horario_t))
 
     app.add_handler(
+
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             responder
