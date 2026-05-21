@@ -1,7 +1,3 @@
-# ==================================================
-# IMPORTS
-# ==================================================
-
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
@@ -22,6 +18,7 @@ import asyncio
 import sqlite3
 import logging
 import time
+import re
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -54,44 +51,46 @@ model = genai.GenerativeModel(
 
     system_instruction="""
 Você é uma inteligência artificial extremamente inteligente,
-natural, moderna e útil.
-
-Seu comportamento deve ser parecido com ChatGPT premium.
+natural, moderna e organizada.
 
 REGRAS:
 
 - Responda sempre em português brasileiro
-- Nunca responda em inglês
-- Seja humana e natural
+- Nunca fale inglês
+- Seja natural
 - Seja inteligente
-- Entenda contexto
+- Seja parecida com ChatGPT
 - Responda curto quando possível
-- Explique detalhadamente apenas quando necessário
-- Nunca faça textos gigantes sem necessidade
+- Explique melhor apenas quando necessário
 - Nunca corte respostas
 - Nunca deixe frases incompletas
+- Não use markdown exagerado
+- Não use:
+#
+##
+###
+***
 - Organize respostas
-- Use listas quando necessário
-- Use emojis apenas quando fizer sentido
+- Use emojis apenas quando necessário
+- Evite textos gigantes
 - Evite respostas robóticas
-- Pense antes de responder
-- Seja moderna
-- Seja parecida com ChatGPT
-- Se a pergunta for simples, responda curto
-- Se a pergunta exigir detalhes, explique melhor
+- Use listas simples quando necessário
 
 FORMATAÇÃO:
 
-- Organize respostas
-- Use espaços entre tópicos
-- Evite blocos gigantes
-- Use:
+✅ CERTO:
 
-1.
-2.
-3.
+📌 Opção 1
+📌 Opção 2
 
-quando fizer sentido.
+1. Primeiro
+2. Segundo
+
+❌ ERRADO:
+
+# TITULO
+## SUBTITULO
+*** TEXTO
 """
 )
 
@@ -130,7 +129,7 @@ conn.commit()
 
 memoria = {}
 
-MAX_MEMORIA = 15
+MAX_MEMORIA = 12
 
 # ==================================================
 # CONFIGURAÇÕES
@@ -161,6 +160,26 @@ ultimo_uso = {}
 def eh_admin(user_id):
 
     return user_id in ADMIN_IDS
+
+# ==================================================
+# LIMPAR TEXTO IA
+# ==================================================
+
+def limpar_texto(texto):
+
+    texto = re.sub(r"\*\*(.*?)\*\*", r"\1", texto)
+
+    texto = re.sub(r"#+", "", texto)
+
+    texto = re.sub(r"`+", "", texto)
+
+    texto = re.sub(r"\*", "•", texto)
+
+    texto = re.sub(r"\n{3,}", "\n\n", texto)
+
+    texto = texto.strip()
+
+    return texto
 
 # ==================================================
 # DIVIDIR TEXTO
@@ -595,10 +614,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         texto_lower = texto.lower().strip()
 
-        # ==================================================
-        # ANTI FLOOD
-        # ==================================================
-
         agora = time.time()
 
         if user_id in ultimo_uso:
@@ -607,10 +622,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         ultimo_uso[user_id] = agora
-
-        # ==================================================
-        # CONFIRMAÇÃO
-        # ==================================================
 
         palavras_confirmacao = [
 
@@ -644,10 +655,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 return
 
-        # ==================================================
-        # IA NO GRUPO
-        # ==================================================
-
         ativar_ia = False
 
         if chat_id == GRUPO_ID:
@@ -667,10 +674,6 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not ativar_ia:
             return
 
-        # ==================================================
-        # PRIVADO SOMENTE ADMIN
-        # ==================================================
-
         if (
             update.effective_chat.type == "private"
             and not eh_admin(user_id)
@@ -678,18 +681,10 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        # ==================================================
-        # DIGITANDO
-        # ==================================================
-
         await context.bot.send_chat_action(
             chat_id=chat_id,
             action=ChatAction.TYPING
         )
-
-        # ==================================================
-        # MEMÓRIA
-        # ==================================================
 
         if user_id not in memoria:
 
@@ -705,50 +700,54 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             memoria[user_id]
         )
 
-        # ==================================================
-        # PROMPT
-        # ==================================================
-
         prompt = f"""
-Você é uma inteligência artificial extremamente avançada,
-natural e altamente inteligente.
+Você é uma IA extremamente inteligente e organizada.
 
-Seu comportamento deve ser parecido com ChatGPT premium.
-
-REGRAS:
+REGRAS IMPORTANTES:
 
 - Responda em português brasileiro
-- Nunca fale em inglês
-- Seja humana e natural
-- Entenda o contexto da conversa
-- Responda curto quando a pergunta for simples
-- Responda detalhado apenas quando necessário
-- Nunca faça textos gigantes sem necessidade
-- Nunca corte frases
-- Nunca deixe respostas incompletas
-- Explique muito bem
-- Organize respostas
-- Use tópicos quando necessário
-- Evite repetição
+- Seja natural
 - Seja moderna
-- Seja persuasiva quando necessário
-- Seja criativa
-- Responda como uma IA premium
-- Pense antes de responder
-- Sempre dê a melhor resposta possível
+- Seja inteligente
+- Responda igual ChatGPT
+- Evite markdown exagerado
+- Não use:
+#
+##
+###
+***
+- Organize bonito
+- Use emojis apenas quando necessário
+- Não faça textos gigantes
+- Responda curto quando possível
+- Responda longo apenas quando necessário
+- Nunca corte respostas
+- Não use símbolos exagerados
+- Use listas simples quando precisar
 
-CONVERSA ANTERIOR:
+FORMATAÇÃO CORRETA:
+
+✅ Certo:
+
+📌 Opção 1
+📌 Opção 2
+
+OU
+
+1. Primeiro
+2. Segundo
+
+❌ Errado:
+
+# TITULO
+## SUBTITULO
+*** TEXTO
+
+CONVERSA:
 {historico}
 
-MENSAGEM DO USUÁRIO:
-{texto}
-
-RESPOSTA:
+IA:
 """
-
-        # ==================================================
-        # GEMINI
-        # ==================================================
 
         resposta = model.generate_content(
 
@@ -757,31 +756,24 @@ RESPOSTA:
             generation_config={
 
                 "temperature": 0.7,
+
                 "top_p": 0.9,
-                "top_k": 30,
-                "max_output_tokens": 2500,
+
+                "top_k": 40,
+
+                "max_output_tokens": 1400,
             }
         )
 
-        if hasattr(resposta, "text"):
-
-            resposta_texto = resposta.text.strip()
-
-        else:
-
-            resposta_texto = (
-                "❌ Não consegui responder."
-            )
+        resposta_texto = limpar_texto(
+            resposta.text.strip()
+        )
 
         memoria[user_id].append(
             f"IA: {resposta_texto}"
         )
 
         memoria[user_id] = memoria[user_id][-MAX_MEMORIA:]
-
-        # ==================================================
-        # DIVIDIR TEXTO
-        # ==================================================
 
         partes = dividir_texto(
             resposta_texto
@@ -897,10 +889,6 @@ async def main():
         )
     )
 
-    # ==================================================
-    # AGENDADOR
-    # ==================================================
-
     scheduler = AsyncIOScheduler(
         timezone=TIMEZONE
     )
@@ -925,10 +913,6 @@ async def main():
     while True:
 
         await asyncio.sleep(3600)
-
-# ==================================================
-# START
-# ==================================================
 
 if __name__ == "__main__":
 
